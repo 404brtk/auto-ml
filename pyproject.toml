@@ -1,7 +1,7 @@
 [project]
 name = "auto-ml-pipeline"
 version = "0.1.0"
-description = ""
+description = "Automated Machine Learning Pipeline"
 authors = [
     {name = "Bartosz Zielonka",email = "bzielonka1@proton.me"}
 ]
@@ -16,6 +16,27 @@ dependencies = [
 packages = [{include = "auto_ml_pipeline", from = "src"}]
 
 
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.4.1"
+black = "^25.1.0"
+ruff = "^0.12.10"
+mypy = "^1.17.1"
+
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.black]
+line-length = 88
+
+[tool.ruff]
+line-length = 88
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "W"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.13"
+strict = true
