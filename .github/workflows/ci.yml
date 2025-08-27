@@ -8,7 +8,7 @@ on:
 
 jobs:
   test:
-    name: Test with pytest
+    name: Test with Python
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -16,12 +16,7 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
-    
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v5
-      with:
-        python-version: ${{ matrix.python-version }}
-    
+
     - name: Install Poetry
       uses: snok/install-poetry@v1
       with:
@@ -29,39 +24,31 @@ jobs:
         virtualenvs-create: true
         virtualenvs-in-project: true
         installer-parallel: true
-    
-    - name: Cache Poetry virtualenv
-      uses: actions/cache@v3
-      id: cache-virtualenv
+
+    - name: Set up Python ${{ matrix.python-version }} with Poetry cache
+      uses: actions/setup-python@v5
       with:
-        path: ~/.virtualenvs
-        key: venv-${{ runner.os }}-${{ matrix.python-version }}-${{ hashFiles('**/poetry.lock') }}
-    
-    - name: Cache pip
-      uses: actions/cache@v3
-      with:
-        path: ~/.cache/pip
-        key: pip-${{ runner.os }}-${{ matrix.python-version }}-${{ hashFiles('**/poetry.lock') }}
-        restore-keys: |
-          pip-${{ runner.os }}-
-    
+        python-version: ${{ matrix.python-version }}
+        cache: 'poetry'                # built-in cache for Poetry venvs
+        # cache-dependency-path is optional; defaults to poetry.lock if present
+        # cache-dependency-path: '**/poetry.lock'
+
     - name: Install dependencies
       run: |
-        poetry config virtualenvs.in-project true
         poetry install --with dev --no-interaction --no-ansi
-    
+
     - name: Run tests with pytest
       run: |
         poetry run pytest -v tests/
-    
+
     - name: Run type checking with mypy
       run: |
         poetry run mypy src/ tests/
-    
+
     - name: Check formatting with Black
       run: |
         poetry run black --check src/ tests/
-    
+
     - name: Lint with Ruff
       run: |
         poetry run ruff check src/ tests/
