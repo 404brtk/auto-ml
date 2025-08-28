@@ -18,6 +18,9 @@ repos:
       - id: mypy
         args: [--strict, --python-version=3.13]
         files: ^src/|^tests/
+        additional_dependencies:
+          - pydantic
+          - pydantic-settings
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
