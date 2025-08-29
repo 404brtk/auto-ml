@@ -51,3 +51,4 @@ ignore = ["E501"]
 plugins = ["pydantic.mypy"]
 python_version = "3.13"
 strict = true
+ignore_missing_imports = true
