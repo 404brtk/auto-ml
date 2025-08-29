@@ -2,7 +2,7 @@ import json
 from datetime import datetime
 from pathlib import Path
 from typing import Any
-import joblib  # type: ignore
+import joblib
 
 
 def make_run_dir(base_dir: str | Path) -> Path:
