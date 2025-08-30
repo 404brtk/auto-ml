@@ -30,6 +30,16 @@ class CleaningConfig(BaseModel):
     outlier_strategy: Optional[str] = Field(
         default=None, description="iqr|zscore|isoforest or None"
     )
+    # How to treat detected outliers: clip keeps row counts consistent for CV; remove drops rows (train-only by default)
+    outlier_method: str = Field(default="clip", description="clip|remove")
+    # Scope of applying outlier logic
+    outlier_apply_scope: str = Field(
+        default="train_only", description="train_only|both"
+    )
+    # IQR/Z-score parameters
+    outlier_iqr_multiplier: float = 1.5
+    outlier_zscore_threshold: float = 3.0
+    # IsolationForest parameters
     outlier_contamination: float = 0.02
 
 
@@ -65,6 +75,7 @@ class FeatureSelectionConfig(BaseModel):
     pca_variance: float = 0.95
     correlation_threshold: Optional[float] = 0.95
     mutual_info_k: Optional[int] = None
+    variance_threshold: Optional[float] = None
 
 
 class ModelingConfig(BaseModel):
