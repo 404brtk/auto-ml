@@ -23,10 +23,19 @@ class SplitConfig(BaseModel):
 
 
 class CleaningConfig(BaseModel):
+    # Whether to drop rows with missing target
     drop_missing_target: bool = True
-    feature_missing_threshold: float = 0.5
-    remove_constant: bool = True
+
+    # Whether to remove duplicate rows
     remove_duplicates: bool = True
+
+    # Threshold for missingness in features (None = disabled)
+    feature_missing_threshold: Optional[float] = 0.5
+
+    # Whether to remove features that are constant across all rows
+    remove_constant: bool = True
+
+    # Outlier detection strategy
     outlier_strategy: Optional[str] = Field(
         default=None, description="iqr|zscore|isoforest or None"
     )
