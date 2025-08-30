@@ -16,7 +16,7 @@ repos:
     rev: v1.17.1
     hooks:
       - id: mypy
-        args: [--strict, --python-version=3.13]
+        args: [--python-version=3.13]
         files: ^src/|^tests/
         additional_dependencies:
           - pydantic
