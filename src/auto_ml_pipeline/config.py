@@ -11,14 +11,12 @@ import yaml  # type: ignore
 class TaskType(str, Enum):
     classification = "classification"
     regression = "regression"
-    time_series = "time_series"
 
 
 class SplitConfig(BaseModel):
     test_size: float = 0.2
     random_state: int = 42
     stratify: bool = True
-    time_column: Optional[str] = None
     n_splits: int = 5
 
 
@@ -84,6 +82,8 @@ class FeatureSelectionConfig(BaseModel):
     pca_variance: float = 0.95
     correlation_threshold: Optional[float] = 0.95
     mutual_info_k: Optional[int] = None
+
+    # Quasi-constant features removal threshold, e.g., 1e-4
     variance_threshold: Optional[float] = None
 
 
