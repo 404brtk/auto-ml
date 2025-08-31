@@ -64,8 +64,13 @@ class ScalingConfig(BaseModel):
 
 
 class EncodingConfig(BaseModel):
+    # Threshold for high-cardinality categoricals
     high_cardinality_threshold: int = 20
-    target_encoding: bool = True
+    # Strategy for high-cardinality categoricals
+    # auto|frequency|target|none (auto/none fall back to frequency)
+    strategy: str = Field(default="frequency", description="auto|frequency|target|none")
+    # Optionally scale numeric encodings produced for high-cardinality categoricals (target/frequency)
+    scale_high_card: bool = False
 
 
 class FeatureEngineeringConfig(BaseModel):
