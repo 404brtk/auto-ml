@@ -30,18 +30,40 @@ logger = get_logger(__name__)
 class FrequencyEncoder(BaseEstimator, TransformerMixin):
     def __init__(self):
         self.freq_: dict[str, dict] = {}
+        self.cols_: List[str] = []
 
     def fit(self, X: pd.DataFrame, y=None):
-        for col in X.columns:
-            counts = X[col].value_counts(dropna=False)
-            self.freq_[col] = (counts / counts.sum()).to_dict()
+        # Accept both DataFrame and ndarray inputs
+        if not isinstance(X, pd.DataFrame):
+            X_df = pd.DataFrame(X)
+        else:
+            X_df = X
+        self.cols_ = [str(c) for c in X_df.columns]
+        self.freq_.clear()
+        for col in X_df.columns:
+            counts = X_df[col].value_counts(dropna=False)
+            self.freq_[str(col)] = (counts / counts.sum()).to_dict()
         return self
 
     def transform(self, X: pd.DataFrame):
-        X_enc = X.copy()
-        for col in X.columns:
-            mapping = self.freq_.get(col, {})
-            X_enc[col] = X[col].map(mapping).fillna(0.0)
+        # Accept both DataFrame and ndarray inputs
+        if not isinstance(X, pd.DataFrame):
+            X_df = pd.DataFrame(X, columns=self.cols_ or None)
+        else:
+            X_df = X.copy()
+            # Ensure expected columns order/names as seen during fit
+            if self.cols_:
+                try:
+                    X_df = X_df[self.cols_]
+                except Exception:
+                    # If columns are missing or names changed, fallback to positional mapping
+                    X_df = pd.DataFrame(
+                        X_df.to_numpy(), columns=self.cols_[: X_df.shape[1]]
+                    )
+        X_enc = X_df.copy()
+        for col in X_enc.columns:
+            mapping = self.freq_.get(str(col), {})
+            X_enc[col] = X_enc[col].map(mapping).fillna(0.0)
         return X_enc.values
 
 
@@ -127,6 +149,14 @@ def build_preprocessor(
 ) -> Tuple[ColumnTransformer, InferredColumns]:
     X = df.drop(columns=[target])
     cols = infer_columns(X, cfg.encoding)
+    logger.info(
+        "Inferred columns -> numeric: %d, cat_low: %d, cat_high: %d, datetime: %d, text: %d",
+        len(cols.numeric),
+        len(cols.categorical_low),
+        len(cols.categorical_high),
+        len(cols.datetime),
+        len(cols.text),
+    )
 
     num_pipe = Pipeline(
         steps=[
@@ -145,6 +175,11 @@ def build_preprocessor(
 
     # High-cardinality categorical encoder selection
     strategy = _choose_high_card_strategy(cfg.encoding)
+    logger.info(
+        "High-cardinality encoding strategy: %s (scale=%s)",
+        strategy,
+        cfg.encoding.scale_high_card,
+    )
 
     if strategy == "target":
         cat_high_steps = [
@@ -191,5 +226,9 @@ def build_preprocessor(
                 )
             )
 
+    logger.info(
+        "Preprocessor built with transformers: %s",
+        ", ".join(name for name, _, _ in transformers) if transformers else "<none>",
+    )
     preprocessor = ColumnTransformer(transformers=transformers, remainder="drop")
     return preprocessor, cols
