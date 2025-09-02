@@ -21,16 +21,20 @@ class SplitConfig(BaseModel):
 
 
 class CleaningConfig(BaseModel):
-    # Whether to drop rows with missing target
+    # Whether to drop rows with missing target (applied pre-split; leakage-safe)
     drop_missing_target: bool = True
 
-    # Whether to remove duplicate rows
+    # Whether to remove duplicate rows (train-only, applied after split on X_train)
     remove_duplicates: bool = True
 
-    # Threshold for missingness in features (None = disabled)
+    # Threshold for missingness in features (train-only). If set, a
+    # FeatureMissingnessDropper transformer is added into the sklearn Pipeline
+    # and learns columns to drop based on missing ratio on the training folds only.
+    # None = disabled
     feature_missing_threshold: Optional[float] = 0.5
 
-    # Whether to remove features that are constant across all rows
+    # Whether to remove features that are constant across training rows.
+    # Implemented via a ConstantFeatureDropper transformer inside the Pipeline.
     remove_constant: bool = True
 
     # Outlier detection strategy
@@ -110,6 +114,11 @@ class OptimizationConfig(BaseModel):
 
 
 class EvalConfig(BaseModel):
+    # Optional list of metric names. The first one determines the CV scorer.
+    # Supported aliases:
+    #  - Classification: 'accuracy', 'f1_macro', 'roc_auc'
+    #  - Regression: 'rmse', 'mse', 'mae', 'r2'
+    # At reporting time, if provided, metrics are filtered to the requested subset.
     metrics: Optional[List[str]] = None
     shap: bool = False
 
