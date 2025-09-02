@@ -22,6 +22,11 @@ from auto_ml_pipeline.data_cleaning import (
 )
 from auto_ml_pipeline.feature_engineering import build_preprocessor
 from auto_ml_pipeline.feature_selection import build_selector
+from auto_ml_pipeline.data_cleaning import (
+    FeatureMissingnessDropper,
+    ConstantFeatureDropper,
+    NumericLikeCoercer,
+)
 from auto_ml_pipeline.models import (
     available_models_classification,
     available_models_regression,
@@ -58,6 +63,33 @@ def _default_scorer(task: TaskType) -> str:
     )
 
 
+def _choose_scorer_from_cfg(task: TaskType, metrics_cfg: Any | None) -> str:
+    """Map cfg.eval.metrics[0] to a sklearn scorer name, fallback to default if unknown.
+    Accepts common aliases like 'rmse' -> 'neg_root_mean_squared_error', 'mae' -> 'neg_mean_absolute_error'.
+    """
+    if not metrics_cfg:
+        return _default_scorer(task)
+    # take the first metric for scoring
+    m = str(metrics_cfg[0]).lower()
+    if task == TaskType.classification:
+        if m in {"accuracy", "acc"}:
+            return "accuracy"
+        if m in {"f1", "f1_macro"}:
+            return "f1_macro"
+        if m in {"roc_auc", "auc"}:
+            return "roc_auc"
+    else:
+        if m in {"rmse", "neg_rmse", "neg_root_mean_squared_error"}:
+            return "neg_root_mean_squared_error"
+        if m in {"mse", "neg_mse", "neg_mean_squared_error"}:
+            return "neg_mean_squared_error"
+        if m in {"mae", "neg_mae", "neg_mean_absolute_error"}:
+            return "neg_mean_absolute_error"
+        if m in {"r2"}:
+            return "r2"
+    return _default_scorer(task)
+
+
 def _suggest(trial: optuna.Trial, key: str, spec: Tuple[str, Any]):
     kind, params = spec
     if kind == "int":
@@ -84,7 +116,23 @@ def _build_pipeline(
 ) -> SkPipeline:
     preproc, _ = build_preprocessor(df, target, cfg.features)
     selector = build_selector(cfg.selection, cfg.task or TaskType.regression)
-    steps = [("pre", preproc)]
+    steps = []
+    # Robust numeric-like coercion for object columns before any feature-based droppers
+    steps.append(("coerce_numeric_like", NumericLikeCoercer(threshold=0.95)))
+    # Train-only droppers working on raw DataFrame before columnwise transforms
+    if cfg.cleaning.feature_missing_threshold is not None:
+        steps.append(
+            (
+                "drop_high_missing",
+                FeatureMissingnessDropper(
+                    threshold=cfg.cleaning.feature_missing_threshold
+                ),
+            )
+        )
+    if cfg.cleaning.remove_constant:
+        steps.append(("drop_constant", ConstantFeatureDropper()))
+    # Column-wise preprocessor next
+    steps.append(("pre", preproc))
     if selector is not None:
         steps.append(("sel", selector))
     steps.append(("model", model))
@@ -103,9 +151,60 @@ def train(df: pd.DataFrame, target: str, cfg: PipelineConfig) -> TrainResult:
 
         cfg.task = infer_task(df, target)
     task = cfg.task
+    logger.info("Task inferred/selected: %s", task.value)
 
     # Clean (pre-split only leakage-safe ops)
     df = clean_data(df, target, cfg.cleaning)
+    logger.info(
+        "Initial data after target cleaning: %s rows, %s columns",
+        df.shape[0],
+        df.shape[1],
+    )
+
+    # If regression but target is stored as string with separators, coerce robustly to numeric
+    if task == TaskType.regression:
+        y = df[target]
+        if y.dtype.kind in {"O"}:
+            # Reuse the same normalization heuristic as NumericLikeCoercer
+            try:
+                from auto_ml_pipeline.data_cleaning import (
+                    NumericLikeCoercer,
+                )  # local import to avoid cycles
+
+                norm = np.vectorize(NumericLikeCoercer._normalize_number_string)
+                y_norm = pd.Series(norm(y.astype(str)), index=y.index)
+            except Exception:
+                # Fallback: basic cleanup
+                y_norm = (
+                    y.astype(str)
+                    .str.strip()
+                    .str.replace(" ", "", regex=False)
+                    .str.replace("'", "", regex=False)
+                )
+                # Heuristic handling of comma/dot
+                y_norm = y_norm.apply(
+                    lambda s: s.replace(".", "") if s.count(".") > 1 else s
+                )
+                y_norm = y_norm.apply(
+                    lambda s: (
+                        s.replace(",", ".")
+                        if ("," in s and (len(s) - s.rfind(",") - 1) in (1, 2))
+                        else s.replace(",", "")
+                    )
+                )
+
+            y_coerced = pd.to_numeric(y_norm, errors="coerce")
+            non_na_ratio = float(y_coerced.notna().mean()) if len(y_coerced) else 0.0
+            if non_na_ratio >= 0.95:
+                df[target] = y_coerced
+                before = len(df)
+                df = df[~df[target].isna()].copy()
+                dropped = before - len(df)
+                if dropped:
+                    logger.info(
+                        "Dropped %d rows with non-numeric target after coercion",
+                        dropped,
+                    )
 
     # Split holdout test
     if task == TaskType.classification and cfg.split.stratify:
@@ -123,7 +222,28 @@ def train(df: pd.DataFrame, target: str, cfg: PipelineConfig) -> TrainResult:
             test_size=cfg.split.test_size,
             random_state=seed,
         )
+    logger.info(
+        "Performed train/test split -> X_train: %s, X_test: %s",
+        X_train.shape,
+        X_test.shape,
+    )
+
+    # Train-only deduplication (row-wise) to avoid leakage
+    if cfg.cleaning.remove_duplicates:
+        before = len(X_train)
+        df_train_tmp = pd.concat([X_train, y_train], axis=1)
+        df_train_tmp = df_train_tmp.drop_duplicates()
+        removed = before - len(df_train_tmp)
+        if removed:
+            logger.info("Train-only duplicates dropped: %d rows", removed)
+        X_train, y_train = df_train_tmp.drop(columns=[target]), df_train_tmp[target]
+    # Recombine train frame for downstream pipeline column inference
     df_train = pd.concat([X_train, y_train], axis=1)
+    logger.info(
+        "Train-only column droppers configured in pipeline: high_missing=%s, constant=%s",
+        cfg.cleaning.feature_missing_threshold,
+        cfg.cleaning.remove_constant,
+    )
 
     # Outliers: fit on train, apply as configured (default: clip, train_only)
     strategy = (cfg.cleaning.outlier_strategy or "").lower()
@@ -137,10 +257,23 @@ def train(df: pd.DataFrame, target: str, cfg: PipelineConfig) -> TrainResult:
                 df_test, target, cfg.cleaning, params, scope="test"
             )
             X_test, y_test = df_test.drop(columns=[target]), df_test[target]
+        logger.info(
+            "After outlier handling -> X_train: %s, X_test: %s",
+            X_train.shape,
+            X_test.shape,
+        )
 
     # CV + scoring
     cv = _choose_cv(task, cfg.split.n_splits, cfg.split.stratify, seed)
-    scorer_name = _default_scorer(task)
+    scorer_name = _choose_scorer_from_cfg(task, cfg.eval.metrics)
+    if cfg.eval.metrics:
+        logger.info(
+            "Requested metrics in config: %s; using scorer: %s",
+            cfg.eval.metrics,
+            scorer_name,
+        )
+    else:
+        logger.info("No metrics configured; using default scorer: %s", scorer_name)
 
     models = _get_models(task, seed)
 
@@ -204,15 +337,50 @@ def train(df: pd.DataFrame, target: str, cfg: PipelineConfig) -> TrainResult:
                 study = optuna.create_study(
                     direction="maximize", sampler=sampler, pruner=pruner
                 )
-                study.optimize(
-                    objective,
-                    n_trials=cfg.optimization.n_trials,
-                    timeout=cfg.optimization.timeout,
-                    show_progress_bar=False,
-                )
-                model_best_params = study.best_trial.params
-                pipe.set_params(**model_best_params)
-                mean_score = float(study.best_value)
+                try:
+                    logger.info(
+                        "Starting Optuna tuning for model %s with %d trials",
+                        name,
+                        cfg.optimization.n_trials,
+                    )
+                    study.optimize(
+                        objective,
+                        n_trials=cfg.optimization.n_trials,
+                        timeout=cfg.optimization.timeout,
+                        show_progress_bar=False,
+                    )
+                    model_best_params = study.best_trial.params
+                    pipe.set_params(**model_best_params)
+                    mean_score = float(study.best_value)
+                except RuntimeError as e:
+                    # Handle nested Optuna invocation (e.g., when train() is called from within another study.optimize)
+                    if "nested invocation" in str(e).lower():
+                        logger.warning(
+                            "Optuna nested optimize detected; skipping internal tuning for model %s.",
+                            name,
+                        )
+                        try:
+                            scores = cross_val_score(
+                                pipe,
+                                X_train,
+                                y_train,
+                                cv=cv,
+                                scoring=scorer_name,
+                                n_jobs=cv_n_jobs,
+                                error_score="raise",
+                            )
+                            mean_score = float(np.nanmean(scores))
+                            model_best_params = {}
+                        except Exception as e2:
+                            logger.exception(
+                                "CV failed for model %s after skipping tuning: %s",
+                                name,
+                                e2,
+                            )
+                            mean_score = -np.inf
+                            model_best_params = {}
+                    else:
+                        raise
         else:
             try:
                 scores = cross_val_score(
@@ -238,6 +406,7 @@ def train(df: pd.DataFrame, target: str, cfg: PipelineConfig) -> TrainResult:
 
     # Fit best on train and evaluate on test
     assert best_estimator is not None
+    logger.info("Fitting best model %s on full training data", best_name)
     best_estimator.fit(X_train, y_train)
 
     y_pred = best_estimator.predict(X_test)
@@ -249,8 +418,23 @@ def train(df: pd.DataFrame, target: str, cfg: PipelineConfig) -> TrainResult:
             y_proba = None
 
     metrics = evaluate_predictions(task, y_test, y_pred, y_proba)
+    # Optionally filter metrics to those requested in cfg
+    if cfg.eval.metrics:
+        wanted = [str(m).lower() for m in cfg.eval.metrics]
+        filtered = {}
+        for k, v in metrics.items():
+            if k.lower() in wanted:
+                filtered[k] = v
+            # allow rmse alias mapping if requested but not present
+            if "rmse" in wanted and k.lower() == "rmse":
+                filtered[k] = v
+        # if filtering removed everything, keep original
+        if filtered:
+            metrics = filtered
+    logger.info("Test metrics: %s", metrics)
 
     run_dir = make_run_dir(cfg.io.output_dir)
+    logger.info("Saving artifacts to %s", run_dir)
     save_model(best_estimator, run_dir / "model.joblib")
     save_json(
         {
