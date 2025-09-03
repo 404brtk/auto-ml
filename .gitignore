@@ -11,6 +11,5 @@ build/
 .pytest_cache/
 .vscode/
 
-tests/
 *.csv
 *.ipynb
