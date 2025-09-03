@@ -1,49 +1,115 @@
 import numpy as np
 import pandas as pd
+from typing import List, Dict, Any, Optional, Union
 from auto_ml_pipeline.config import CleaningConfig
 from auto_ml_pipeline.logging_utils import get_logger
-from sklearn.ensemble import IsolationForest
 from sklearn.base import BaseEstimator, TransformerMixin
+
 
 logger = get_logger(__name__)
 
 
+def _validate_config(cfg: CleaningConfig) -> None:
+    """Validate cleaning configuration parameters."""
+    if (
+        hasattr(cfg, "feature_missing_threshold")
+        and cfg.feature_missing_threshold is not None
+    ):
+        if not (0 <= cfg.feature_missing_threshold <= 1):
+            raise ValueError(
+                f"feature_missing_threshold must be in [0,1], got {cfg.feature_missing_threshold}"
+            )
+
+    if (
+        hasattr(cfg, "outlier_iqr_multiplier")
+        and cfg.outlier_iqr_multiplier is not None
+    ):
+        if cfg.outlier_iqr_multiplier <= 0:
+            raise ValueError(
+                f"outlier_iqr_multiplier must be positive, got {cfg.outlier_iqr_multiplier}"
+            )
+
+    if (
+        hasattr(cfg, "outlier_zscore_threshold")
+        and cfg.outlier_zscore_threshold is not None
+    ):
+        if cfg.outlier_zscore_threshold <= 0:
+            raise ValueError(
+                f"outlier_zscore_threshold must be positive, got {cfg.outlier_zscore_threshold}"
+            )
+
+
 def _ensure_target_exists(df: pd.DataFrame, target: str) -> None:
+    """Validate target column exists in DataFrame."""
     if target not in df.columns:
-        raise KeyError(f"Target column '{target}' not found in DataFrame")
+        raise KeyError(
+            f"Target column '{target}' not found in DataFrame. "
+            f"Available columns: {list(df.columns)}"
+        )
 
 
 def remove_missing_target(df: pd.DataFrame, target: str) -> pd.DataFrame:
+    """Remove rows with missing target values."""
     before = len(df)
-    df2 = df[~df[target].isna()].copy()
-    logger.info("Removed %d rows with missing target", before - len(df2))
-    return df2
+    mask = df[target].notna()
+    df_clean = df[mask].copy()
+    removed = before - len(df_clean)
+
+    if removed > 0:
+        logger.info(
+            "Removed %d rows (%.2f%%) with missing target",
+            removed,
+            100 * removed / before,
+        )
+
+    return df_clean
 
 
-def _compute_high_missing_cols(X: pd.DataFrame, threshold: float) -> list[str]:
+def _compute_high_missing_cols(X: pd.DataFrame, threshold: float) -> List[str]:
+    """Identify columns with high missing value ratio."""
     if not (0 <= threshold <= 1):
         logger.warning(
             "feature_missing_threshold %.3f is out of [0,1]; skipping", threshold
         )
         return []
-    miss_ratio = X.isna().mean()
-    return miss_ratio[miss_ratio > threshold].index.tolist()
+
+    if X.empty:
+        return []
+    miss_ratio = X.isnull().mean()
+    high_missing = miss_ratio[miss_ratio > threshold]
+    return high_missing.index.tolist()
 
 
-def _compute_constant_cols(X: pd.DataFrame) -> list[str]:
-    nunique = X.nunique(dropna=True)
-    return nunique[nunique <= 1].index.tolist()
+def _compute_constant_cols(X: pd.DataFrame) -> List[str]:
+    """Identify constant or near-constant columns."""
+    if X.empty:
+        return []
+    constant_cols = []
+    for col in X.columns:
+        try:
+            nunique = X[col].nunique(dropna=True)
+            if nunique <= 1:
+                constant_cols.append(col)
+        except Exception as e:
+            logger.warning("Error checking column %s for constancy: %s", col, e)
+
+    return constant_cols
 
 
 def drop_high_missing_features(
     df: pd.DataFrame, threshold: float, target: str
 ) -> pd.DataFrame:
+    """Drop features with high missing value ratio."""
     if threshold is None or threshold <= 0:
         return df
+
     X = df.drop(columns=[target])
     to_drop = _compute_high_missing_cols(X, threshold)
+
     if to_drop:
-        show = ", ".join(to_drop[:20]) + (" ..." if len(to_drop) > 20 else "")
+        show = ", ".join(to_drop[:10]) + (
+            f" ... (+{len(to_drop)-10} more)" if len(to_drop) > 10 else ""
+        )
         logger.info(
             "Dropping %d features with missingness > %.2f: %s",
             len(to_drop),
@@ -51,261 +117,423 @@ def drop_high_missing_features(
             show,
         )
         X = X.drop(columns=to_drop)
-    kept_cols_in_order = [c for c in df.columns if c != target and c in X.columns]
-    return pd.concat([X[kept_cols_in_order], df[target]], axis=1)
+
+    # Maintain column order
+    kept_cols = [c for c in df.columns if c != target and c in X.columns]
+    return pd.concat([X[kept_cols], df[[target]]], axis=1)
 
 
 def remove_constant_features(df: pd.DataFrame, target: str) -> pd.DataFrame:
+    """Remove constant features."""
     X = df.drop(columns=[target])
     to_drop = _compute_constant_cols(X)
+
     if to_drop:
-        show = ", ".join(to_drop[:20]) + (" ..." if len(to_drop) > 20 else "")
+        show = ", ".join(to_drop[:10]) + (
+            f" ... (+{len(to_drop)-10} more)" if len(to_drop) > 10 else ""
+        )
         logger.info("Removed %d constant features: %s", len(to_drop), show)
         X = X.drop(columns=to_drop)
-    kept_cols_in_order = [c for c in df.columns if c != target and c in X.columns]
-    return pd.concat([X[kept_cols_in_order], df[target]], axis=1)
+
+    kept_cols = [c for c in df.columns if c != target and c in X.columns]
+    return pd.concat([X[kept_cols], df[[target]]], axis=1)
 
 
 def drop_duplicates(df: pd.DataFrame) -> pd.DataFrame:
+    """Drop duplicate rows."""
     before = len(df)
-    df2 = df.drop_duplicates()
-    logger.info("Dropped %d duplicate rows", before - len(df2))
-    return df2
+    df_clean = df.drop_duplicates(keep="first")
+    removed = before - len(df_clean)
+
+    if removed > 0:
+        logger.info(
+            "Dropped %d duplicate rows (%.2f%%)", removed, 100 * removed / before
+        )
+
+    return df_clean
 
 
 def clean_data(df: pd.DataFrame, target: str, cfg: CleaningConfig) -> pd.DataFrame:
+    """Clean data with basic pre-split operations."""
+    _validate_config(cfg)
     _ensure_target_exists(df, target)
-    # IMPORTANT: To avoid leakage, we only perform row-wise target cleaning pre-split.
-    # Duplicate removal happens train-only after the split in trainer.
-    # Feature-based decisions (missingness, constant features) are handled by
-    # sklearn transformers inside the Pipeline (train-only):
-    #   - FeatureMissingnessDropper
-    #   - ConstantFeatureDropper
+
+    result_df = df.copy()
+
+    # Only perform row-wise target cleaning pre-split to avoid leakage
     if cfg.drop_missing_target:
-        df = remove_missing_target(df, target)
-    # outliers are handled post-split in trainer to avoid leakage
-    return df.reset_index(drop=True)
+        result_df = remove_missing_target(result_df, target)
+
+    # Reset index to avoid potential issues
+    result_df = result_df.reset_index(drop=True)
+
+    logger.info("Data cleaning completed. Rows: %d -> %d", len(df), len(result_df))
+    return result_df
 
 
 # ---------- Sklearn transformers (train-only feature droppers) ----------
 class FeatureMissingnessDropper(BaseEstimator, TransformerMixin):
-    """
-    Drop columns whose missing ratio (computed on training data during fit) exceeds a threshold.
-    Works with pandas DataFrames. If given ndarrays at transform time, acts as passthrough.
-    """
+    """Drop columns with high missing ratio based on training data."""
 
     def __init__(self, threshold: float = 0.5):
+        if not (0 <= threshold <= 1):
+            raise ValueError(f"threshold must be in [0,1], got {threshold}")
         self.threshold = float(threshold)
-        self.drop_cols_: list[str] = []
+        self.drop_cols_: List[str] = []
 
-    def fit(self, X: pd.DataFrame, y=None):
+    def fit(self, X: Union[pd.DataFrame, np.ndarray], y=None):
         if not isinstance(X, pd.DataFrame):
             self.drop_cols_ = []
-            logger.warning(
-                "FeatureMissingnessDropper received non-DataFrame input in fit; skipping column selection"
-            )
+            logger.warning("FeatureMissingnessDropper received non-DataFrame; skipping")
             return self
+
         self.drop_cols_ = _compute_high_missing_cols(X, self.threshold)
+
         if self.drop_cols_:
-            show = ", ".join(self.drop_cols_[:20]) + (
-                " ..." if len(self.drop_cols_) > 20 else ""
+            show = ", ".join(self.drop_cols_[:10]) + (
+                f" ... (+{len(self.drop_cols_)-10} more)"
+                if len(self.drop_cols_) > 10
+                else ""
             )
             logger.info(
-                "[Dropper] High-missing features selected to drop (> %.2f): %d -> %s",
+                "[Dropper] High-missing features to drop (> %.2f): %d -> %s",
                 self.threshold,
                 len(self.drop_cols_),
                 show,
             )
         else:
-            logger.info("[Dropper] No high-missing features selected to drop")
+            logger.info("[Dropper] No high-missing features to drop")
+
         return self
 
-    def transform(self, X):
+    def transform(
+        self, X: Union[pd.DataFrame, np.ndarray]
+    ) -> Union[pd.DataFrame, np.ndarray]:
         if isinstance(X, pd.DataFrame) and self.drop_cols_:
-            return X.drop(columns=self.drop_cols_, errors="ignore")
+            # Use intersection to handle cases where columns might not exist
+            cols_to_drop = list(set(self.drop_cols_) & set(X.columns))
+            if cols_to_drop:
+                return X.drop(columns=cols_to_drop)
         return X
 
 
 class ConstantFeatureDropper(BaseEstimator, TransformerMixin):
-    """
-    Drop columns that are constant (nunique <= 1) on training data.
-    Works with pandas DataFrames. If given ndarrays at transform time, acts as passthrough.
-    """
+    """Drop constant features based on training data."""
 
     def __init__(self):
-        self.drop_cols_: list[str] = []
+        self.drop_cols_: List[str] = []
 
-    def fit(self, X: pd.DataFrame, y=None):
+    def fit(self, X: Union[pd.DataFrame, np.ndarray], y=None):
         if not isinstance(X, pd.DataFrame):
             self.drop_cols_ = []
-            logger.warning(
-                "ConstantFeatureDropper received non-DataFrame input in fit; skipping column selection"
-            )
+            logger.warning("ConstantFeatureDropper received non-DataFrame; skipping")
             return self
+
         self.drop_cols_ = _compute_constant_cols(X)
+
         if self.drop_cols_:
-            show = ", ".join(self.drop_cols_[:20]) + (
-                " ..." if len(self.drop_cols_) > 20 else ""
+            show = ", ".join(self.drop_cols_[:10]) + (
+                f" ... (+{len(self.drop_cols_)-10} more)"
+                if len(self.drop_cols_) > 10
+                else ""
             )
             logger.info(
-                "[Dropper] Constant features selected to drop: %d -> %s",
+                "[Dropper] Constant features to drop: %d -> %s",
                 len(self.drop_cols_),
                 show,
             )
         else:
-            logger.info("[Dropper] No constant features selected to drop")
+            logger.info("[Dropper] No constant features to drop")
+
         return self
 
-    def transform(self, X):
+    def transform(
+        self, X: Union[pd.DataFrame, np.ndarray]
+    ) -> Union[pd.DataFrame, np.ndarray]:
         if isinstance(X, pd.DataFrame) and self.drop_cols_:
-            return X.drop(columns=self.drop_cols_, errors="ignore")
+            cols_to_drop = list(set(self.drop_cols_) & set(X.columns))
+            if cols_to_drop:
+                return X.drop(columns=cols_to_drop)
         return X
 
 
 class NumericLikeCoercer(BaseEstimator, TransformerMixin):
-    """
-    Coerce columns to numeric values.
-    Works with pandas DataFrames. If given ndarrays at transform time, acts as passthrough.
-    """
+    """Numeric coercion with better number format detection."""
 
-    def __init__(self, threshold: float = 0.95, thousand_sep: str | None = None):
+    def __init__(
+        self,
+        threshold: float = 0.95,
+        thousand_sep: Optional[str] = None,
+        sample_size: int = 10000,
+    ):
+        if not (0 < threshold <= 1):
+            raise ValueError(f"threshold must be in (0,1], got {threshold}")
+
         self.threshold = float(threshold)
-        # thousand_sep kept for backward compatibility; if None, auto-detect
         self.thousand_sep = thousand_sep
-        self.convert_cols_: list[str] = []
+        self.sample_size = max(1000, sample_size)  # Minimum sample size
+        self.convert_cols_: List[str] = []
+        self.conversion_stats_: Dict[str, Dict[str, Any]] = {}
 
     @staticmethod
-    def _normalize_number_string(s: str) -> str:
-        # Trim and remove spaces and apostrophes commonly used as group separators
-        s = s.strip().replace(" ", "").replace("'", "")
-        if s == "":
-            return s
-        has_comma = "," in s
-        has_dot = "." in s
-        # If explicit thousand_sep provided (legacy path)
-        # We still run through general cleanups above first
-        # and then apply simple removal or swap if sep is comma and dot used as decimal.
-        # Prefer general heuristic when thousand_sep is None.
-        if has_comma and has_dot:
-            # Decide which is decimal: pick the last occurring symbol; the other is grouping
-            last_comma = s.rfind(",")
-            last_dot = s.rfind(".")
-            if last_comma > last_dot:
-                # Comma likely decimal, dot grouping (EU): remove dots, replace last comma with dot
-                s = s.replace(".", "")
-                s = s.replace(",", ".")
-            else:
-                # Dot likely decimal, comma grouping (US): remove commas
-                s = s.replace(",", "")
-            return s
-        if has_comma and not has_dot:
-            # Single symbol: decide if decimal or grouping based on count/position
-            if s.count(",") == 1:
-                # If exactly one comma near end with 1-2 digits after, treat as decimal.
-                # Else treat as grouping.
-                after = len(s) - s.rfind(",") - 1
-                if 1 <= after <= 2:
-                    return s.replace(",", ".")
-            # Otherwise remove grouping commas
-            return s.replace(",", "")
-        if has_dot and not has_comma:
-            # If multiple dots, likely grouping -> remove all dots
-            if s.count(".") > 1:
-                return s.replace(".", "")
-            # One dot: assume decimal
-            return s
-        # No comma/dot left; already clean
-        return s
+    def _detect_number_format(series: pd.Series) -> Dict[str, Any]:
+        """Detect number format with confidence scoring."""
+        sample = series.dropna().astype(str).str.strip()
+        if len(sample) == 0:
+            return {"confidence": 0.0, "format": "unknown"}
 
-    def fit(self, X: pd.DataFrame, y=None):
+        # Count format patterns
+        patterns = {
+            "comma_decimal": 0,  # 1.234,56
+            "dot_decimal": 0,  # 1,234.56
+            "simple": 0,  # 1234.56 or 1234
+            "scientific": 0,  # 1.23e10
+        }
+
+        for val in sample.head(min(1000, len(sample))):
+            val = val.replace(" ", "").replace("'", "")
+            if not val or val in ["nan", "null", "none"]:
+                continue
+
+            # Scientific notation
+            if "e" in val.lower():
+                patterns["scientific"] += 1
+            # Contains both comma and dot
+            elif "," in val and "." in val:
+                last_comma = val.rfind(",")
+                last_dot = val.rfind(".")
+                if last_comma > last_dot:
+                    patterns["comma_decimal"] += 1
+                else:
+                    patterns["dot_decimal"] += 1
+            # Only comma
+            elif "," in val:
+                # Heuristic: if 1-2 digits after last comma, likely decimal
+                after_comma = len(val) - val.rfind(",") - 1
+                if val.count(",") == 1 and 1 <= after_comma <= 2:
+                    patterns["comma_decimal"] += 1
+                else:
+                    patterns["dot_decimal"] += 1  # Grouping comma
+            # Only dot or no separators
+            else:
+                patterns["simple"] += 1
+
+        total = sum(patterns.values())
+        if total == 0:
+            return {"confidence": 0.0, "format": "unknown"}
+
+        best_format = max(patterns.items(), key=lambda x: x[1])
+        confidence = best_format[1] / total
+
+        return {
+            "confidence": confidence,
+            "format": best_format[0],
+            "patterns": patterns,
+        }
+
+    def _normalize_number_string(self, s: str, format_info: Dict[str, Any]) -> str:
+        """Normalize number string based on detected format."""
+        s = s.strip().replace(" ", "").replace("'", "")
+        if not s:
+            return s
+
+        format_type = format_info.get("format", "simple")
+
+        try:
+            if format_type == "scientific":
+                return s  # Keep as-is for scientific notation
+            elif format_type == "comma_decimal":
+                # European: 1.234,56 -> 1234.56
+                s = s.replace(".", "")  # Remove grouping dots
+                s = s.replace(",", ".")  # Convert decimal comma to dot
+            elif format_type == "dot_decimal":
+                # US: 1,234.56 -> 1234.56
+                s = s.replace(",", "")  # Remove grouping commas
+            # For "simple", no changes needed
+
+            return s
+        except Exception:
+            return s
+
+    def fit(self, X: Union[pd.DataFrame, np.ndarray], y=None):
         if not isinstance(X, pd.DataFrame):
             self.convert_cols_ = []
-            logger.warning(
-                "NumericLikeCoercer received non-DataFrame input in fit; skipping column selection"
-            )
+            self.conversion_stats_ = {}
+            logger.warning("NumericLikeCoercer received non-DataFrame; skipping")
             return self
+
         obj_cols = X.select_dtypes(include=["object", "category"]).columns
-        convert: list[str] = []
-        for c in obj_cols:
-            s_raw = X[c].astype(str)
-            if self.thousand_sep:
-                s = s_raw.str.replace(" ", "", regex=False).str.replace(
-                    "'", "", regex=False
+        convert: List[str] = []
+
+        for col in obj_cols:
+            try:
+                # Sample large columns for efficiency
+                series = X[col]
+                if len(series) > self.sample_size:
+                    series = series.sample(n=self.sample_size, random_state=42)
+
+                # Detect number format
+                format_info = self._detect_number_format(series)
+
+                if self.thousand_sep:
+                    # Legacy path with explicit separator
+                    cleaned = (
+                        series.astype(str).str.replace(" ", "").str.replace("'", "")
+                    )
+                    cleaned = cleaned.str.replace(self.thousand_sep, "")
+                else:
+                    # Use format detection
+                    cleaned = series.astype(str).apply(
+                        lambda x: self._normalize_number_string(x, format_info)
+                    )
+
+                # Test conversion
+                numeric = pd.to_numeric(cleaned, errors="coerce")
+                if len(numeric) == 0:
+                    continue
+
+                conversion_rate = float(numeric.notna().mean())
+
+                if conversion_rate >= self.threshold:
+                    convert.append(col)
+                    self.conversion_stats_[col] = {
+                        "conversion_rate": conversion_rate,
+                        "format_info": format_info,
+                        "sample_size": len(series),
+                    }
+
+            except Exception as e:
+                logger.warning(
+                    "Error analyzing column %s for numeric conversion: %s", col, e
                 )
-                s = s.str.replace(self.thousand_sep, "", regex=False)
-            else:
-                s = s_raw.apply(self._normalize_number_string)
-            num = pd.to_numeric(s, errors="coerce")
-            if len(num) == 0:
                 continue
-            ratio = float(num.notna().mean())
-            if ratio >= self.threshold:
-                convert.append(c)
+
         self.convert_cols_ = convert
+
         if convert:
             logger.info(
-                "[Coercer] Converting %d object cols to numeric (thr=%.2f): %s",
+                "[Coercer] Converting %d columns to numeric (threshold=%.2f): %s",
                 len(convert),
                 self.threshold,
-                ", ".join(convert[:20]) + (" ..." if len(convert) > 20 else ""),
+                ", ".join(convert[:10])
+                + (f" ... (+{len(convert)-10} more)" if len(convert) > 10 else ""),
             )
         else:
-            logger.info("[Coercer] No numeric-like object columns detected")
+            logger.info("[Coercer] No numeric-like columns detected")
+
         return self
 
-    def transform(self, X):
+    def transform(
+        self, X: Union[pd.DataFrame, np.ndarray]
+    ) -> Union[pd.DataFrame, np.ndarray]:
         if not isinstance(X, pd.DataFrame) or not self.convert_cols_:
             return X
-        Xo = X.copy()
-        for c in self.convert_cols_:
-            s_raw = Xo[c].astype(str)
-            if self.thousand_sep:
-                s = s_raw.str.replace(" ", "", regex=False).str.replace(
-                    "'", "", regex=False
-                )
-                s = s.str.replace(self.thousand_sep, "", regex=False)
-            else:
-                s = s_raw.apply(self._normalize_number_string)
-            Xo[c] = pd.to_numeric(s, errors="coerce")
-        return Xo
+
+        X_out = X.copy()
+
+        for col in self.convert_cols_:
+            if col not in X_out.columns:
+                continue
+
+            try:
+                format_info = self.conversion_stats_.get(col, {}).get("format_info", {})
+
+                if self.thousand_sep:
+                    cleaned = (
+                        X_out[col].astype(str).str.replace(" ", "").str.replace("'", "")
+                    )
+                    cleaned = cleaned.str.replace(self.thousand_sep, "")
+                else:
+                    cleaned = (
+                        X_out[col]
+                        .astype(str)
+                        .apply(lambda x: self._normalize_number_string(x, format_info))
+                    )
+
+                X_out[col] = pd.to_numeric(cleaned, errors="coerce")
+
+            except Exception as e:
+                logger.warning("Error converting column %s: %s", col, e)
+                continue
+
+        return X_out
 
 
 # ---------- Outlier utilities (fit on train, apply on train/test) ----------
-def fit_outlier_params(df: pd.DataFrame, target: str, cfg: CleaningConfig) -> dict:
-    """Compute outlier detection parameters on numeric features using train data.
+def fit_outlier_params(
+    df: pd.DataFrame, target: str, cfg: CleaningConfig
+) -> Dict[str, Any]:
+    """Fit outlier detection parameters with error handling."""
+    _validate_config(cfg)
 
-    Returns a dict with necessary parameters depending on strategy.
-    """
     strategy = (cfg.outlier_strategy or "").lower()
+    if strategy in {None, "", "none"}:
+        return {"strategy": strategy}
+
     X = df.drop(columns=[target])
-    num_cols = X.select_dtypes(include=[np.number]).columns
-    params: dict = {"strategy": strategy, "num_cols": list(num_cols)}
-    if len(num_cols) == 0 or strategy in {None, "", "none"}:
+    num_cols = X.select_dtypes(include=[np.number]).columns.tolist()
+
+    params: Dict[str, Any] = {
+        "strategy": strategy,
+        "num_cols": num_cols,
+        "total_samples": len(X),
+    }
+
+    if len(num_cols) == 0:
+        logger.info("No numeric columns found for outlier detection")
         return params
 
-    if strategy == "iqr":
-        Q1 = X[num_cols].quantile(0.25)
-        Q3 = X[num_cols].quantile(0.75)
-        IQR = Q3 - Q1
-        k = cfg.outlier_iqr_multiplier
-        lower = Q1 - k * IQR
-        upper = Q3 + k * IQR
-        params.update({"lower": lower, "upper": upper})
-    elif strategy == "zscore":
-        mean = X[num_cols].mean()
-        std = X[num_cols].std(ddof=0).replace(0, np.nan)
-        params.update({"mean": mean, "std": std, "thr": cfg.outlier_zscore_threshold})
-    elif strategy == "isoforest":
-        try:
-            iso = IsolationForest(
-                contamination=cfg.outlier_contamination, random_state=42
+    try:
+        if strategy == "iqr":
+            Q1 = X[num_cols].quantile(0.25)
+            Q3 = X[num_cols].quantile(0.75)
+            IQR = Q3 - Q1
+            k = cfg.outlier_iqr_multiplier
+
+            # Handle zero IQR (constant columns)
+            valid_cols = IQR[IQR > 0].index.tolist()
+            if not valid_cols:
+                logger.warning(
+                    "All numeric columns have zero IQR; skipping outlier detection"
+                )
+                return params
+
+            lower = Q1[valid_cols] - k * IQR[valid_cols]
+            upper = Q3[valid_cols] + k * IQR[valid_cols]
+            params.update({"lower": lower, "upper": upper, "valid_cols": valid_cols})
+
+        elif strategy == "zscore":
+            mean = X[num_cols].mean()
+            std = X[num_cols].std(ddof=1)  # Use sample std
+
+            # Filter out columns with zero/near-zero std
+            valid_cols = std[std > 1e-10].index.tolist()
+            if not valid_cols:
+                logger.warning(
+                    "All numeric columns have zero std; skipping outlier detection"
+                )
+                return params
+
+            params.update(
+                {
+                    "mean": mean[valid_cols],
+                    "std": std[valid_cols],
+                    "thr": cfg.outlier_zscore_threshold,
+                    "valid_cols": valid_cols,
+                }
             )
-            iso.fit(X[num_cols].fillna(X[num_cols].median()))
-            params.update({"iso": iso})
-        except Exception as e:
-            logger.warning("IsolationForest unavailable (%s); skipping outliers", e)
-    else:
-        logger.warning("Unknown outlier_strategy '%s'; skipping", strategy)
+
+    except Exception as e:
+        logger.error(
+            "Error fitting outlier parameters for strategy '%s': %s", strategy, e
+        )
+        return {"strategy": "none"}  # Fallback to no outlier detection
+
+    logger.info(
+        "Fitted outlier detection: strategy=%s, valid_cols=%d",
+        strategy,
+        len(params.get("valid_cols", num_cols)),
+    )
     return params
 
 
@@ -313,94 +541,89 @@ def apply_outliers(
     df: pd.DataFrame,
     target: str,
     cfg: CleaningConfig,
-    params: dict,
+    params: Dict[str, Any],
     scope: str,
 ) -> pd.DataFrame:
-    """Apply outlier treatment according to params.
-
-    scope: 'train' or 'test' context for logging. Behavior is controlled by cfg.outlier_method
-    and cfg.outlier_apply_scope (handled by caller for whether to apply on test).
-    """
+    """Apply outlier treatment with error handling."""
     strategy = params.get("strategy")
-    num_cols = params.get("num_cols", [])
-    if not strategy or not num_cols:
+    if not strategy or strategy == "none":
         return df
 
-    X = df.drop(columns=[target]).copy()
-    y = df[target]
+    valid_cols = params.get("valid_cols", [])
+    if not valid_cols:
+        return df
+
+    # Ensure indices are aligned
+    df_work = df.copy().reset_index(drop=True)
+    X = df_work.drop(columns=[target])
+    y = df_work[target]
 
     method = (cfg.outlier_method or "clip").lower()
-    if strategy == "iqr" and "lower" in params and "upper" in params:
-        lower = params["lower"]
-        upper = params["upper"]
-        if method == "clip":
-            X[num_cols] = X[num_cols].clip(lower=lower, upper=upper, axis=1)
-            logger.info("Clipped outliers via IQR on %s data", scope)
-            return pd.concat([X, y], axis=1)
-        else:  # remove
-            mask = ~(((X[num_cols] < lower) | (X[num_cols] > upper)).any(axis=1))
-            before = len(X)
-            X = X[mask]
-            y = y.loc[X.index]
-            logger.info(
-                "Removed %d outliers via IQR on %s data", before - len(X), scope
-            )
-            return pd.concat([X, y], axis=1)
-    elif strategy == "zscore" and "mean" in params and "std" in params:
-        mean = params["mean"]
-        std = params["std"].replace(0, np.nan)
-        thr = params.get("thr", 3.0)
-        # Operate only on columns with valid std
-        valid = [c for c in num_cols if pd.notna(std.get(c, np.nan))]
-        if not valid:
-            logger.info(
-                "Z-score outlier handling skipped on %s data: no valid numeric columns",
-                scope,
-            )
-            return pd.concat([X, y], axis=1)
-        z = (X[valid] - mean[valid]) / std[valid]
-        if method == "clip":
-            X[valid] = X[valid].where(
-                z.abs() <= thr, mean[valid] + thr * np.sign(z) * std[valid]
-            )
-            logger.info(
-                "Clipped outliers via Z-score on %s data (thr=%.2f)", scope, thr
-            )
-            return pd.concat([X, y], axis=1)
-        else:
-            mask = (z.abs() <= thr).all(axis=1)
-            before = len(X)
-            X = X[mask]
-            y = y.loc[X.index]
-            logger.info(
-                "Removed %d outliers via Z-score on %s data (thr=%.2f)",
-                before - len(X),
-                scope,
-                thr,
-            )
-            return pd.concat([X, y], axis=1)
-    elif strategy == "isoforest" and "iso" in params:
-        iso = params["iso"]
-        preds = iso.predict(
-            X[num_cols].fillna(X[num_cols].median())
-        )  # 1 normal, -1 outlier
-        if method == "clip":
-            # IsolationForest doesn't provide values to clip to; leave as-is for clip mode
-            logger.info(
-                "IsolationForest used with method=clip: no changes applied on %s data",
-                scope,
-            )
-            return pd.concat([X, y], axis=1)
-        else:
-            mask = preds == 1
-            before = len(X)
-            X = X[mask]
-            y = y.loc[X.index]
-            logger.info(
-                "Removed %d outliers via IsolationForest on %s data",
-                before - len(X),
-                scope,
-            )
-            return pd.concat([X, y], axis=1)
 
-    return df
+    try:
+        if strategy == "iqr" and "lower" in params and "upper" in params:
+            lower = params["lower"]
+            upper = params["upper"]
+
+            if method == "clip":
+                X[valid_cols] = X[valid_cols].clip(lower=lower, upper=upper, axis=1)
+                outliers_handled = (
+                    (
+                        (df.drop(columns=[target])[valid_cols] < lower)
+                        | (df.drop(columns=[target])[valid_cols] > upper)
+                    )
+                    .sum()
+                    .sum()
+                )
+                logger.info(
+                    "Clipped %d outliers via IQR on %s data", outliers_handled, scope
+                )
+            else:  # remove
+                mask = ~(
+                    ((X[valid_cols] < lower) | (X[valid_cols] > upper)).any(axis=1)
+                )
+                before = len(X)
+                X = X[mask].reset_index(drop=True)
+                y = y[mask].reset_index(drop=True)
+                outliers_handled = before - len(X)
+                logger.info(
+                    "Removed %d outliers via IQR on %s data", outliers_handled, scope
+                )
+
+        elif strategy == "zscore" and "mean" in params and "std" in params:
+            mean = params["mean"]
+            std = params["std"]
+            thr = params.get("thr", 3.0)
+
+            z_scores = (X[valid_cols] - mean) / std
+
+            if method == "clip":
+                clipped = mean + thr * np.sign(z_scores) * std
+                X[valid_cols] = X[valid_cols].where(z_scores.abs() <= thr, clipped)
+                outliers_handled = (z_scores.abs() > thr).sum().sum()
+                logger.info(
+                    "Clipped %d outliers via Z-score on %s data (thr=%.2f)",
+                    outliers_handled,
+                    scope,
+                    thr,
+                )
+            else:
+                mask = (z_scores.abs() <= thr).all(axis=1)
+                before = len(X)
+                X = X[mask].reset_index(drop=True)
+                y = y[mask].reset_index(drop=True)
+                outliers_handled = before - len(X)
+                logger.info(
+                    "Removed %d outliers via Z-score on %s data (thr=%.2f)",
+                    outliers_handled,
+                    scope,
+                    thr,
+                )
+
+    except Exception as e:
+        logger.error("Error applying outlier treatment (%s): %s", strategy, e)
+        return df
+
+    # Reconstruct DataFrame maintaining column order
+    result = pd.concat([X, y], axis=1)
+    return result
