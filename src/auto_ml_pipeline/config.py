@@ -1,6 +1,6 @@
 from enum import Enum
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Union
 
 from pydantic import BaseModel, Field, model_validator
 import json
@@ -39,7 +39,7 @@ class CleaningConfig(BaseModel):
 
     # Outlier detection strategy
     outlier_strategy: Optional[str] = Field(
-        default=None, description="iqr|zscore|isoforest or None"
+        default=None, description="iqr|zscore or None"
     )
     # How to treat detected outliers: clip keeps row counts consistent for CV; remove drops rows (train-only by default)
     outlier_method: str = Field(default="clip", description="clip|remove")
@@ -50,8 +50,6 @@ class CleaningConfig(BaseModel):
     # IQR/Z-score parameters
     outlier_iqr_multiplier: float = 1.5
     outlier_zscore_threshold: float = 3.0
-    # IsolationForest parameters
-    outlier_contamination: float = 0.02
 
 
 class ImputationConfig(BaseModel):
@@ -87,12 +85,16 @@ class FeatureEngineeringConfig(BaseModel):
 
 
 class FeatureSelectionConfig(BaseModel):
-    pca: bool = False
-    pca_variance: float = 0.95
+    # PCA configuration
+    pca_components: Optional[Union[int, float]] = None
+
+    # Correlation filtering
     correlation_threshold: Optional[float] = 0.95
+
+    # Mutual information feature selection
     mutual_info_k: Optional[int] = None
 
-    # Quasi-constant features removal threshold, e.g., 1e-4
+    # Quasi-constant features removal threshold
     variance_threshold: Optional[float] = None
 
 
