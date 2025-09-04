@@ -68,10 +68,10 @@ class FeatureEngineeringConfig(BaseModel):
 
 
 class FeatureSelectionConfig(BaseModel):
+    variance_threshold: Optional[float] = Field(default=None, ge=0)
+    correlation_threshold: Optional[float] = Field(default=None, gt=0, lt=1)
+    mutual_info_k: Optional[int] = Field(default=None, gt=0)
     pca_components: Optional[Union[int, float]] = None
-    correlation_threshold: Optional[float] = 0.95
-    mutual_info_k: Optional[int] = None
-    variance_threshold: Optional[float] = None
 
 
 class OptimizationConfig(BaseModel):
