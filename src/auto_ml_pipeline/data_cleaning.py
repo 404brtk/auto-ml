@@ -160,6 +160,10 @@ def clean_data(df: pd.DataFrame, target: str, cfg: CleaningConfig) -> pd.DataFra
 
     result_df = df.copy()
 
+    # Drop duplicates first (affects all columns)
+    if cfg.drop_duplicates:  # Use the renamed config field
+        result_df = drop_duplicates(result_df)
+
     # Only perform row-wise target cleaning pre-split to avoid leakage
     if cfg.drop_missing_target:
         result_df = remove_missing_target(result_df, target)
