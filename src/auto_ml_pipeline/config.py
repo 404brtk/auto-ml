@@ -39,10 +39,9 @@ class CleaningConfig(BaseModel):
     outlier_zscore_threshold: float = 3.0
 
 
+# TODO: option: remove rows with missing values
 class ImputationConfig(BaseModel):
-    strategy: str = Field(
-        default="auto", description="auto|mean|median|most_frequent|knn"
-    )
+    strategy: str = Field(default="median", description="mean|median|knn")
 
 
 class ScalingConfig(BaseModel):
@@ -51,7 +50,7 @@ class ScalingConfig(BaseModel):
 
 class EncodingConfig(BaseModel):
     high_cardinality_threshold: int = Field(default=50, ge=1)
-    strategy: str = Field(default="frequency", description="frequency|target")
+    strategy: str = Field(default="target", description="frequency|target")
     scale_high_card: bool = False
 
 
