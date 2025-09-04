@@ -117,29 +117,42 @@ def build_selector(cfg: FeatureSelectionConfig, task: TaskType) -> Optional[Pipe
     steps = []
 
     # Variance threshold
-    if cfg.variance_threshold is not None:
-        threshold = max(0.0, cfg.variance_threshold)
-        steps.append(("variance", VarianceThreshold(threshold=threshold)))
+    if cfg.variance_threshold is not None and cfg.variance_threshold >= 0:
+        steps.append(("variance", VarianceThreshold(threshold=cfg.variance_threshold)))
 
     # Correlation filtering
-    if cfg.correlation_threshold is not None:
-        threshold = min(cfg.correlation_threshold, 0.999)
-        steps.append(("correlation", CorrelationFilter(threshold=threshold)))
-
-    # PCA
-    if getattr(cfg, "pca_components", None) is not None:
-        steps.append(("pca", PCA(n_components=cfg.pca_components)))
+    if cfg.correlation_threshold is not None and 0 < cfg.correlation_threshold < 1:
+        steps.append(
+            ("correlation", CorrelationFilter(threshold=cfg.correlation_threshold))
+        )
 
     # Mutual information
-    if cfg.mutual_info_k is not None:
+    if cfg.mutual_info_k is not None and cfg.mutual_info_k > 0:
         score_func = (
             mutual_info_classif
             if task == TaskType.classification
             else mutual_info_regression
         )
-        # Ensure k doesn't exceed available features (will be handled by pipeline)
         steps.append(
             ("mutual_info", SelectKBest(score_func=score_func, k=cfg.mutual_info_k))
         )
+
+    # PCA - dimensionality reduction
+    if cfg.pca_components is not None:
+        # Validate PCA components
+        if isinstance(cfg.pca_components, float):
+            if not (0 < cfg.pca_components <= 1):
+                logger.warning(
+                    "PCA variance ratio should be in (0,1], got %s", cfg.pca_components
+                )
+                return Pipeline(steps) if steps else None
+        elif isinstance(cfg.pca_components, int):
+            if cfg.pca_components < 1:
+                logger.warning(
+                    "PCA n_components should be >= 1, got %s", cfg.pca_components
+                )
+                return Pipeline(steps) if steps else None
+
+        steps.append(("pca", PCA(n_components=cfg.pca_components)))
 
     return Pipeline(steps) if steps else None
