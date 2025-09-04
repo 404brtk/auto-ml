@@ -80,22 +80,6 @@ def _compute_high_missing_cols(X: pd.DataFrame, threshold: float) -> List[str]:
     return high_missing.index.tolist()
 
 
-def _compute_constant_cols(X: pd.DataFrame) -> List[str]:
-    """Identify constant or near-constant columns."""
-    if X.empty:
-        return []
-    constant_cols = []
-    for col in X.columns:
-        try:
-            nunique = X[col].nunique(dropna=True)
-            if nunique <= 1:
-                constant_cols.append(col)
-        except Exception as e:
-            logger.warning("Error checking column %s for constancy: %s", col, e)
-
-    return constant_cols
-
-
 def drop_high_missing_features(
     df: pd.DataFrame, threshold: float, target: str
 ) -> pd.DataFrame:
@@ -121,6 +105,22 @@ def drop_high_missing_features(
     # Maintain column order
     kept_cols = [c for c in df.columns if c != target and c in X.columns]
     return pd.concat([X[kept_cols], df[[target]]], axis=1)
+
+
+def _compute_constant_cols(X: pd.DataFrame) -> List[str]:
+    """Identify constant columns."""
+    if X.empty:
+        return []
+    constant_cols = []
+    for col in X.columns:
+        try:
+            nunique = X[col].nunique(dropna=True)
+            if nunique <= 1:
+                constant_cols.append(col)
+        except Exception as e:
+            logger.warning("Error checking column %s for constancy: %s", col, e)
+
+    return constant_cols
 
 
 def remove_constant_features(df: pd.DataFrame, target: str) -> pd.DataFrame:
@@ -171,7 +171,9 @@ def clean_data(df: pd.DataFrame, target: str, cfg: CleaningConfig) -> pd.DataFra
     return result_df
 
 
-# ---------- Sklearn transformers (train-only feature droppers) ----------
+# sklearn transformers
+
+
 class FeatureMissingnessDropper(BaseEstimator, TransformerMixin):
     """Drop columns with high missing ratio based on training data."""
 
@@ -459,7 +461,9 @@ class NumericLikeCoercer(BaseEstimator, TransformerMixin):
         return X_out
 
 
-# ---------- Outlier utilities (fit on train, apply on train/test) ----------
+# outlier utilities
+
+
 def fit_outlier_params(
     df: pd.DataFrame, target: str, cfg: CleaningConfig
 ) -> Dict[str, Any]:
