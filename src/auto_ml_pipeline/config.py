@@ -91,6 +91,18 @@ class IOConfig(BaseModel):
     output_dir: Path = Path("outputs")
 
 
+class ModelsConfig(BaseModel):
+    """Configure which models to run.
+
+    - include: only run these model keys (e.g., ["random_forest", "lightgbm"]).
+    - exclude: run all available models except these.
+    If both are provided, include takes precedence and exclude is applied after include.
+    """
+
+    include: Optional[List[str]] = ["lightgbm"]
+    exclude: Optional[List[str]] = Field(default=None)
+
+
 class PipelineConfig(BaseModel):
     task: Optional[TaskType] = None
     split: SplitConfig = SplitConfig()
@@ -100,6 +112,7 @@ class PipelineConfig(BaseModel):
     optimization: OptimizationConfig = OptimizationConfig()
     eval: EvalConfig = EvalConfig()
     io: IOConfig = IOConfig()
+    models: ModelsConfig = ModelsConfig()
 
     @model_validator(mode="after")
     def validate_paths(self) -> "PipelineConfig":
