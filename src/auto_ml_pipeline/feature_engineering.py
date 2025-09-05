@@ -48,9 +48,9 @@ class FrequencyEncoder(BaseEstimator, TransformerMixin):
 
     def fit(self, X: Union[pd.DataFrame, np.ndarray], y=None):
         """Fit frequency encoder on training data."""
-        if hasattr(X, "columns"):
-            self.feature_names_in_ = list(X.columns)
-            X_df = X
+        if isinstance(X, pd.DataFrame):
+            X_df: pd.DataFrame = X.copy()
+            self.feature_names_in_ = list(X_df.columns)
         else:
             # If array input, ensure 2D and create generic column names
             arr = np.asarray(X)
@@ -68,8 +68,8 @@ class FrequencyEncoder(BaseEstimator, TransformerMixin):
     def transform(self, X: Union[pd.DataFrame, np.ndarray]) -> np.ndarray:
         """Transform categorical values to frequency ratios."""
         # Convert to DataFrame for consistent processing
-        if hasattr(X, "columns"):
-            X_df = X.copy()
+        if isinstance(X, pd.DataFrame):
+            X_df: pd.DataFrame = X.copy()
         else:
             arr = np.asarray(X)
             if arr.ndim == 1:
