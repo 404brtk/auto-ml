@@ -24,15 +24,6 @@ def infer_task(
 
     Returns:
         TaskType.classification or TaskType.regression
-
-    Examples:
-        >>> df = pd.DataFrame({'target': [1, 2, 3, 4, 5]})
-        >>> infer_task(df, 'target')  # Many unique integers
-        TaskType.regression
-
-        >>> df = pd.DataFrame({'target': ['A', 'B', 'A', 'C']})
-        >>> infer_task(df, 'target')  # String categories
-        TaskType.classification
     """
     if target not in df.columns:
         raise KeyError(f"Target column '{target}' not found in DataFrame")
