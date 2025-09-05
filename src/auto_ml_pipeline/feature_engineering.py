@@ -23,15 +23,12 @@ from auto_ml_pipeline.logging_utils import get_logger
 
 logger = get_logger(__name__)
 
-
 # TODO: fix: UserWarning: X does not have valid feature names, but LGBMRegressor was fitted with feature names
 # need to investigate
 
 
 def combine_text_columns(X):
-    """Combine multiple text columns into a single string per row.
-    Accepts DataFrame or ndarray; returns 1D array of strings.
-    """
+    """Combine multiple text columns into a single string per row."""
     if hasattr(X, "to_numpy"):
         arr = X.astype(str).to_numpy()
     else:
@@ -43,61 +40,49 @@ def combine_text_columns(X):
 
 
 class FrequencyEncoder(BaseEstimator, TransformerMixin):
-    """Simple frequency encoder that works with DataFrames."""
+    """Simple frequency encoder that replaces categorical values with their frequency ratios."""
 
     def __init__(self):
         self.frequency_maps_: Dict[str, Dict] = {}
         self.feature_names_in_: List[str] = []
 
-    def _to_dataframe(self, X) -> pd.DataFrame:
-        """Ensure input is a DataFrame with column names.
-        - If X has `columns`, assume it's already a DataFrame-like and return as-is.
-        - If X is a 1D array/Series, make it a single-column DataFrame.
-        - If X is a 2D array, create generic column names as strings.
-        """
-        if hasattr(X, "columns"):
-            return X
-        X = np.asarray(X)
-        if X.ndim == 1:
-            return pd.DataFrame({"col_0": X})
-        n_cols = X.shape[1]
-        cols = [f"col_{i}" for i in range(n_cols)]
-        return pd.DataFrame(X, columns=cols)
-
     def fit(self, X: Union[pd.DataFrame, np.ndarray], y=None):
         """Fit frequency encoder on training data."""
-        X_df = self._to_dataframe(X)
-        self.feature_names_in_ = list(X_df.columns)
+        if hasattr(X, "columns"):
+            self.feature_names_in_ = list(X.columns)
+            X_df = X
+        else:
+            # If array input, create generic column names
+            self.feature_names_in_ = [f"col_{i}" for i in range(X.shape[15])]
+            X_df = pd.DataFrame(X, columns=self.feature_names_in_)
 
         for col in X_df.columns:
             value_counts = X_df[col].value_counts(dropna=False)
-            # Store frequency ratios
             self.frequency_maps_[col] = (value_counts / len(X_df)).to_dict()
         return self
 
-    def transform(self, X: Union[pd.DataFrame, np.ndarray]) -> pd.DataFrame:
-        """Transform categorical values to frequencies."""
-        X_df = self._to_dataframe(X).copy()
+    def transform(self, X: Union[pd.DataFrame, np.ndarray]) -> np.ndarray:
+        """Transform categorical values to frequency ratios."""
+        # Convert to DataFrame for consistent processing
+        if hasattr(X, "columns"):
+            X_df = X.copy()
+        else:
+            X_df = pd.DataFrame(X, columns=self.feature_names_in_)
 
-        # Process each fitted column
-        result_data = {}
         for col in self.feature_names_in_:
             if col in X_df.columns:
                 if col in self.frequency_maps_:
-                    result_data[col] = (
-                        X_df[col].map(self.frequency_maps_[col]).fillna(0.0)
-                    )
+                    X_df[col] = X_df[col].map(self.frequency_maps_[col]).fillna(0.0)
                 else:
-                    result_data[col] = pd.Series([0.0] * len(X_df))
+                    X_df[col] = 0.0
             else:
-                # Add missing columns with default value
-                result_data[col] = pd.Series([0.0] * len(X_df))
+                X_df[col] = 0.0
 
-        # Create DataFrame with consistent column order
-        return pd.DataFrame(result_data, columns=self.feature_names_in_)
+        # Return numpy array
+        return X_df[self.feature_names_in_].values
 
-    def get_feature_names_out(self, input_features=None):
-        """Return feature names for output features."""
+    def get_feature_names_out(self, input_features=None) -> np.ndarray:
+        """Get output feature names for transformed data."""
         return np.array(self.feature_names_in_)
 
 
@@ -144,23 +129,34 @@ def categorize_columns(df: pd.DataFrame, cfg: FeatureEngineeringConfig) -> Colum
 
 
 class SimpleDateTimeFeatures(BaseEstimator, TransformerMixin):
-    """Extract basic datetime features."""
+    """Extract basic datetime features (year, month, day, dayofweek, quarter, is_weekend)."""
 
     def __init__(self):
         self.datetime_cols_: List[str] = []
+        self.feature_names_out_: List[str] = []
 
     def fit(self, X: pd.DataFrame, y=None):
+        """Fit stores datetime columns and generates output feature names."""
         self.datetime_cols_ = X.columns.tolist()
+        self.feature_names_out_ = []
+        for col in self.datetime_cols_:
+            self.feature_names_out_.extend(
+                [
+                    f"{col}_year",
+                    f"{col}_month",
+                    f"{col}_day",
+                    f"{col}_dayofweek",
+                    f"{col}_quarter",
+                    f"{col}_is_weekend",
+                ]
+            )
         return self
 
     def transform(self, X: pd.DataFrame) -> np.ndarray:
-        """Extract year, month, day, and day of week from datetime columns."""
+        """Extract datetime features as numeric array."""
         features = []
-
         for col in self.datetime_cols_:
             dt_series = pd.to_datetime(X[col], errors="coerce")
-
-            # Extract basic features
             features.extend(
                 [
                     dt_series.dt.year.values,
@@ -171,8 +167,11 @@ class SimpleDateTimeFeatures(BaseEstimator, TransformerMixin):
                     (dt_series.dt.dayofweek >= 5).astype(int).values,
                 ]
             )
-        # Stack features horizontally
         return np.column_stack(features) if features else np.empty((len(X), 0))
+
+    def get_feature_names_out(self, input_features=None) -> np.ndarray:
+        """Get output feature names for transformed data."""
+        return np.array(self.feature_names_out_)
 
 
 # TODO: option: remove rows with missing values
