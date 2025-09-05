@@ -68,7 +68,7 @@ def infer_task(
         return TaskType.classification
 
     # Categorical dtype -> classification
-    if pd.api.types.is_categorical_dtype(y):
+    if isinstance(y.dtype, pd.CategoricalDtype):
         logger.info("Categorical target detected -> classification")
         return TaskType.classification
 
