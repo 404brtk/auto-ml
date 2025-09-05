@@ -52,9 +52,13 @@ class FrequencyEncoder(BaseEstimator, TransformerMixin):
             self.feature_names_in_ = list(X.columns)
             X_df = X
         else:
-            # If array input, create generic column names
-            self.feature_names_in_ = [f"col_{i}" for i in range(X.shape[15])]
-            X_df = pd.DataFrame(X, columns=self.feature_names_in_)
+            # If array input, ensure 2D and create generic column names
+            arr = np.asarray(X)
+            if arr.ndim == 1:
+                arr = arr.reshape(-1, 1)
+            n_cols = arr.shape[1]
+            self.feature_names_in_ = [f"col_{i}" for i in range(n_cols)]
+            X_df = pd.DataFrame(arr, columns=self.feature_names_in_)
 
         for col in X_df.columns:
             value_counts = X_df[col].value_counts(dropna=False)
@@ -67,7 +71,10 @@ class FrequencyEncoder(BaseEstimator, TransformerMixin):
         if hasattr(X, "columns"):
             X_df = X.copy()
         else:
-            X_df = pd.DataFrame(X, columns=self.feature_names_in_)
+            arr = np.asarray(X)
+            if arr.ndim == 1:
+                arr = arr.reshape(-1, 1)
+            X_df = pd.DataFrame(arr, columns=self.feature_names_in_)
 
         for col in self.feature_names_in_:
             if col in X_df.columns:
