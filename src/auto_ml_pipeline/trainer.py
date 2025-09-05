@@ -129,15 +129,6 @@ def build_ml_pipeline(
     steps = [
         # Numeric coercion (converts string-like numbers to actual numbers)
         ("numeric_coercer", NumericLikeCoercer(threshold=0.95)),
-        # Drop features with high missing ratios
-        (
-            "missing_dropper",
-            FeatureMissingnessDropper(
-                threshold=cfg.cleaning.feature_missing_threshold or 0.5
-            ),
-        ),
-        # Drop constant features
-        ("constant_dropper", ConstantFeatureDropper()),
         # Main preprocessing (imputation, scaling, encoding)
         ("preprocessor", preprocessor),
     ]
@@ -312,6 +303,33 @@ def train(df: pd.DataFrame, target: str, cfg: PipelineConfig) -> TrainResult:
         "After outlier handling: train=%s, test=%s", X_train.shape, X_test.shape
     )
 
+    # Apply high-missing and constant feature droppers based on training data
+    # These operate on raw DataFrames prior to column-wise preprocessing
+    if cfg.cleaning.feature_missing_threshold is not None:
+        try:
+            miss_dropper = FeatureMissingnessDropper(
+                threshold=cfg.cleaning.feature_missing_threshold
+            )
+            # Fit on X_train only
+            miss_dropper.fit(X_train)
+            X_train = miss_dropper.transform(X_train)
+            # Ensure X_test has the same columns
+            X_test = miss_dropper.transform(X_test)
+        except Exception as e:
+            logger.warning("Skipping FeatureMissingnessDropper due to: %s", e)
+
+    if cfg.cleaning.remove_constant:
+        try:
+            const_dropper = ConstantFeatureDropper()
+            const_dropper.fit(X_train)
+            X_train = const_dropper.transform(X_train)
+            X_test = const_dropper.transform(X_test)
+        except Exception as e:
+            logger.warning("Skipping ConstantFeatureDropper due to: %s", e)
+
+    # Rebuild df_train after column droppers
+    df_train = pd.concat([X_train, y_train], axis=1)
+
     # Setup cross-validation and scoring
     cv = get_cv_splitter(task, cfg.split.n_splits, cfg.split.stratify, random_state)
     scorer_name = get_scorer_name(task, getattr(cfg.eval, "metrics", None))
@@ -380,7 +398,25 @@ def train(df: pd.DataFrame, target: str, cfg: PipelineConfig) -> TrainResult:
             continue
 
     if best_pipeline is None:
-        raise RuntimeError("No models could be successfully trained")
+        # Fallback: try a simple baseline model to avoid hard failure on edge cases
+        logger.warning(
+            "No models succeeded during CV; falling back to a baseline model"
+        )
+        try:
+            baseline_models = get_available_models(task, random_state)
+            # Prefer random_forest if available, else take any
+            baseline_key = (
+                "random_forest"
+                if "random_forest" in baseline_models
+                else next(iter(baseline_models.keys()))
+            )
+            baseline_model = baseline_models[baseline_key]
+            best_model_name = baseline_key
+            best_pipeline = build_ml_pipeline(df_train, target, cfg, baseline_model)
+            best_params = {}
+        except Exception as e:
+            logger.exception("Baseline model construction failed: %s", e)
+            raise RuntimeError("No models could be successfully trained")
 
     # Fit best model on full training data
     logger.info("Training best model: %s", best_model_name)
