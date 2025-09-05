@@ -52,6 +52,8 @@ class EncodingConfig(BaseModel):
     high_cardinality_threshold: int = Field(default=50, ge=1)
     strategy: str = Field(default="target", description="frequency|target")
     scale_high_card: bool = False
+    # Safety: when number of target classes exceeds this, avoid target encoding to prevent OOM
+    target_encoder_max_classes: int = Field(default=50, ge=2)
 
 
 class FeatureEngineeringConfig(BaseModel):

@@ -24,6 +24,10 @@ from auto_ml_pipeline.logging_utils import get_logger
 logger = get_logger(__name__)
 
 
+# TODO: fix: UserWarning: X does not have valid feature names, but LGBMRegressor was fitted with feature names
+# need to investigate
+
+
 def combine_text_columns(X):
     """Combine multiple text columns into a single string per row.
     Accepts DataFrame or ndarray; returns 1D array of strings.
@@ -202,6 +206,7 @@ def build_preprocessor(
     """Build preprocessing pipeline based on inferred column types."""
 
     X = df.drop(columns=[target])
+    y = df[target]
     col_types = categorize_columns(X, cfg)
     logger.info(
         "Column types: numeric=%d, cat_low=%d, cat_high=%d, datetime=%d, text=%d",
@@ -239,9 +244,32 @@ def build_preprocessor(
         steps = [("imputer", SimpleImputer(strategy="most_frequent"))]
 
         # Choose encoding strategy
-        if cfg.encoding.strategy == "frequency":
+        use_target_encoder = cfg.encoding.strategy != "frequency"
+
+        # TODO: FIX: there is a problem with parsing target column
+        # what is supposed to be float is parsed as int
+        # as a result, TargetEncoder treats it as categorical
+        # Safety: avoid TargetEncoder when too many target classes (can cause OOM)
+        try:
+            n_unique_target = y.nunique(dropna=True)
+            is_float_target = getattr(y.dtype, "kind", None) == "f"
+            if (
+                use_target_encoder
+                and not is_float_target
+                and n_unique_target > cfg.encoding.target_encoder_max_classes
+            ):
+                logger.warning(
+                    "Too many target classes (%d) for TargetEncoder; falling back to FrequencyEncoder",
+                    n_unique_target,
+                )
+                use_target_encoder = False
+        except Exception:
+            # If anything goes wrong, default to safer frequency encoding
+            use_target_encoder = False
+
+        if not use_target_encoder:
             steps.append(("encoder", FrequencyEncoder()))
-        else:  # Default to target
+        else:
             steps.append(("encoder", TargetEncoder()))
 
         # Optional scaling for encoded features
