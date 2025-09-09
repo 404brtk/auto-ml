@@ -181,7 +181,6 @@ class SimpleDateTimeFeatures(BaseEstimator, TransformerMixin):
         return np.array(self.feature_names_out_)
 
 
-# TODO: option: remove rows with missing values
 def get_imputer(strategy: str = "auto") -> BaseEstimator:
     """Get appropriate imputer based on strategy."""
     if strategy in ["mean", "median"]:
