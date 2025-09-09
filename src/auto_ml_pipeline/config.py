@@ -40,7 +40,6 @@ class CleaningConfig(BaseModel):
     outlier_zscore_threshold: float = 3.0
 
 
-# TODO: option: remove rows with missing values
 class ImputationConfig(BaseModel):
     strategy: str = Field(default="median", description="mean|median|knn")
 
