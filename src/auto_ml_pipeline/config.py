@@ -23,7 +23,8 @@ class SplitConfig(BaseModel):
 class CleaningConfig(BaseModel):
     # Pre-split cleaning (row-wise operations, no feature learning)
     drop_missing_target: bool = True
-    drop_duplicates: bool = True  # Move here and rename for consistency
+    drop_duplicates: bool = True
+    max_missing_features_per_row: Optional[int] = Field(default=None)
 
     # Post-split cleaning (applied after split, fit on train)
     feature_missing_threshold: Optional[float] = 0.5

@@ -21,6 +21,15 @@ def _validate_config(cfg: CleaningConfig) -> None:
             )
 
     if (
+        hasattr(cfg, "max_missing_features_per_row")
+        and cfg.max_missing_features_per_row is not None
+    ):
+        if cfg.max_missing_features_per_row < 0:
+            raise ValueError(
+                f"max_missing_features_per_row must be non-negative, got {cfg.max_missing_features_per_row}"
+            )
+
+    if (
         hasattr(cfg, "outlier_iqr_multiplier")
         and cfg.outlier_iqr_multiplier is not None
     ):
@@ -60,6 +69,35 @@ def remove_missing_target(df: pd.DataFrame, target: str) -> pd.DataFrame:
             "Removed %d rows (%.2f%%) with missing target",
             removed,
             100 * removed / before,
+        )
+
+    return df_clean
+
+
+def remove_high_missing_rows(
+    df: pd.DataFrame, target: str, max_missing: int
+) -> pd.DataFrame:
+    """Remove rows with more than max_missing missing features."""
+    if max_missing < 0:
+        raise ValueError(f"max_missing must be non-negative, got {max_missing}")
+
+    before = len(df)
+
+    # Count missing values per row, excluding target column
+    X = df.drop(columns=[target])
+    missing_per_row = X.isnull().sum(axis=1)
+
+    # Keep rows with missing count <= max_missing
+    mask = missing_per_row <= max_missing
+    df_clean = df[mask].copy()
+    removed = before - len(df_clean)
+
+    if removed > 0:
+        logger.info(
+            "Removed %d rows (%.2f%%) with >%d missing features",
+            removed,
+            100 * removed / before,
+            max_missing,
         )
 
     return df_clean
@@ -167,6 +205,12 @@ def clean_data(df: pd.DataFrame, target: str, cfg: CleaningConfig) -> pd.DataFra
     # Only perform row-wise target cleaning pre-split to avoid leakage
     if cfg.drop_missing_target:
         result_df = remove_missing_target(result_df, target)
+
+    # Remove rows with too many missing features (pre-split to avoid leakage)
+    if cfg.max_missing_features_per_row is not None:
+        result_df = remove_high_missing_rows(
+            result_df, target, cfg.max_missing_features_per_row
+        )
 
     # Reset index to avoid potential issues
     result_df = result_df.reset_index(drop=True)
