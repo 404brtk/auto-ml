@@ -140,38 +140,6 @@ def build_ml_pipeline(
     return pipeline
 
 
-def coerce_regression_target(df: pd.DataFrame, target: str) -> pd.DataFrame:
-    """Coerce string-formatted numeric targets to float for regression."""
-    y = df[target]
-
-    if y.dtype.kind not in {"O"}:  # Already numeric
-        return df
-
-    logger.info("Attempting to coerce string target to numeric for regression")
-
-    # Use simplified numeric coercion
-    y_cleaned = y.astype(str).str.replace(",", "").str.replace(" ", "").str.strip()
-    y_numeric = pd.to_numeric(y_cleaned, errors="coerce")
-
-    conversion_rate = y_numeric.notna().mean()
-    if conversion_rate >= 0.95:
-        df = df.copy()
-        df[target] = y_numeric
-        # Remove rows with failed conversion
-        before_len = len(df)
-        df = df.dropna(subset=[target])
-        if len(df) < before_len:
-            logger.info(
-                "Removed %d rows with non-numeric target values", before_len - len(df)
-            )
-    else:
-        logger.warning(
-            "Target coercion rate %.2f%% too low, keeping as-is", 100 * conversion_rate
-        )
-
-    return df
-
-
 def optimize_model(
     model_name: str,
     pipeline: SkPipeline,
@@ -256,10 +224,6 @@ def train(df: pd.DataFrame, target: str, cfg: PipelineConfig) -> TrainResult:
     # Clean data (pre-split operations only)
     df = clean_data(df, target, cfg.cleaning)
     logger.info("After cleaning: %d rows, %d columns", df.shape[0], df.shape[1])
-
-    # Coerce regression targets if needed
-    if task == TaskType.regression:
-        df = coerce_regression_target(df, target)
 
     # Train/test split
     stratify_y = (
