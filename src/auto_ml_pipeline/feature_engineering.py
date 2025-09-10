@@ -11,7 +11,6 @@ from sklearn.preprocessing import (
     StandardScaler,
     MinMaxScaler,
     RobustScaler,
-    TargetEncoder,
 )
 from sklearn.preprocessing import FunctionTransformer
 from sklearn.feature_extraction.text import TfidfVectorizer
@@ -104,8 +103,6 @@ class ColumnTypes:
     text: List[str]
 
 
-# TODO: fix datetime: probably should first try to convert to datetime,
-# then check if it is actually datetime; should be done in data_cleaning probably
 def categorize_columns(df: pd.DataFrame, cfg: FeatureEngineeringConfig) -> ColumnTypes:
     """Categorize columns by type using config-based heuristics."""
     numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
@@ -211,7 +208,6 @@ def build_preprocessor(
     """Build preprocessing pipeline based on inferred column types."""
 
     X = df.drop(columns=[target])
-    y = df[target]
     col_types = categorize_columns(X, cfg)
     logger.info(
         "Column types: numeric=%d, cat_low=%d, cat_high=%d, datetime=%d, text=%d",
@@ -248,34 +244,9 @@ def build_preprocessor(
     if col_types.categorical_high:
         steps = [("imputer", SimpleImputer(strategy="most_frequent"))]
 
-        # Choose encoding strategy
-        use_target_encoder = cfg.encoding.strategy != "frequency"
-
-        # TODO: FIX: there is a problem with parsing target column
-        # what is supposed to be float is parsed as int
-        # as a result, TargetEncoder treats it as categorical
-        # Safety: avoid TargetEncoder when too many target classes (can cause OOM)
-        try:
-            n_unique_target = y.nunique(dropna=True)
-            is_float_target = getattr(y.dtype, "kind", None) == "f"
-            if (
-                use_target_encoder
-                and not is_float_target
-                and n_unique_target > cfg.encoding.target_encoder_max_classes
-            ):
-                logger.warning(
-                    "Too many target classes (%d) for TargetEncoder; falling back to FrequencyEncoder",
-                    n_unique_target,
-                )
-                use_target_encoder = False
-        except Exception:
-            # If anything goes wrong, default to safer frequency encoding
-            use_target_encoder = False
-
-        if not use_target_encoder:
-            steps.append(("encoder", FrequencyEncoder()))
-        else:
-            steps.append(("encoder", TargetEncoder()))
+        # TEMP: Use FrequencyEncoder for all high-cardinality categorical features
+        # TODO: add more encoders like HashingEncoder, etc.
+        steps.append(("encoder", FrequencyEncoder()))
 
         # Optional scaling for encoded features
         if cfg.encoding.scale_high_card:
