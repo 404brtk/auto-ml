@@ -192,17 +192,17 @@ def drop_duplicates(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def clean_data(df: pd.DataFrame, target: str, cfg: CleaningConfig) -> pd.DataFrame:
-    """Clean data with basic pre-split operations."""
+    """Clean data with pre-split operations."""
     _validate_config(cfg)
     _ensure_target_exists(df, target)
 
     result_df = df.copy()
 
-    # Drop duplicates first (affects all columns)
-    if cfg.drop_duplicates:  # Use the renamed config field
+    # Drop duplicates
+    if cfg.drop_duplicates:
         result_df = drop_duplicates(result_df)
 
-    # Convert datetime columns before any other processing
+    # Convert datetime columns
     datetime_converter = DateTimeConverter()
     result_df = datetime_converter.fit_transform(result_df)
 
@@ -210,11 +210,11 @@ def clean_data(df: pd.DataFrame, target: str, cfg: CleaningConfig) -> pd.DataFra
     numeric_coercer = NumericLikeCoercer(threshold=0.95)
     result_df = numeric_coercer.fit_transform(result_df)
 
-    # Only perform row-wise target cleaning pre-split to avoid leakage
+    # Remove rows with missing target
     if cfg.drop_missing_target:
         result_df = remove_missing_target(result_df, target)
 
-    # Remove rows with too many missing features (pre-split to avoid leakage)
+    # Remove rows with too many missing features
     if cfg.max_missing_features_per_row is not None:
         result_df = remove_high_missing_rows(
             result_df, target, cfg.max_missing_features_per_row
@@ -228,8 +228,6 @@ def clean_data(df: pd.DataFrame, target: str, cfg: CleaningConfig) -> pd.DataFra
 
 
 # sklearn transformers
-
-
 class FeatureMissingnessDropper(BaseEstimator, TransformerMixin):
     """Drop columns with high missing ratio based on training data."""
 
@@ -316,7 +314,7 @@ class ConstantFeatureDropper(BaseEstimator, TransformerMixin):
 
 
 class NumericLikeCoercer(BaseEstimator, TransformerMixin):
-    """Numeric coercion with better number format detection."""
+    """Numeric coercion with number format detection."""
 
     def __init__(
         self,
