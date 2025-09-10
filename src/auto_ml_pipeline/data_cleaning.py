@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-from typing import List, Dict, Any, Optional, Union
+from typing import List, Dict, Any, Optional, Union, TypedDict
 from auto_ml_pipeline.config import CleaningConfig
 from auto_ml_pipeline.logging_utils import get_logger
 from sklearn.base import BaseEstimator, TransformerMixin
@@ -201,6 +201,10 @@ def clean_data(df: pd.DataFrame, target: str, cfg: CleaningConfig) -> pd.DataFra
     # Drop duplicates first (affects all columns)
     if cfg.drop_duplicates:  # Use the renamed config field
         result_df = drop_duplicates(result_df)
+
+    # Convert datetime columns before any other processing
+    datetime_converter = DateTimeConverter()
+    result_df = datetime_converter.fit_transform(result_df)
 
     # Only perform row-wise target cleaning pre-split to avoid leakage
     if cfg.drop_missing_target:
@@ -509,9 +513,193 @@ class NumericLikeCoercer(BaseEstimator, TransformerMixin):
         return X_out
 
 
+# datetime detection and conversion utilities
+class DateTimeDetectionResult(TypedDict):
+    is_datetime: bool
+    confidence: float
+    format: Optional[str]
+    successful_parses: int
+
+
+def _detect_datetime_patterns(
+    series: pd.Series, sample_size: int = 1000
+) -> DateTimeDetectionResult:
+    """Detect common datetime patterns in a string series."""
+    # Sample the series for efficiency
+    sample = series.dropna().astype(str).str.strip()
+    if len(sample) == 0:
+        return {
+            "is_datetime": False,
+            "confidence": 0.0,
+            "format": None,
+            "successful_parses": 0,
+        }
+
+    if len(sample) > sample_size:
+        sample = sample.sample(n=sample_size, random_state=42)
+
+    # Common datetime patterns to test
+    datetime_patterns = [
+        # DD-MM-YYYY, DD/MM/YYYY, DD.MM.YYYY
+        (r"^\d{1,2}[-/.]\d{1,2}[-/.]\d{4}$", ["%d-%m-%Y", "%d/%m/%Y", "%d.%m.%Y"]),
+        # MM-DD-YYYY, MM/DD/YYYY, MM.DD.YYYY
+        (r"^\d{1,2}[-/.]\d{1,2}[-/.]\d{4}$", ["%m-%d-%Y", "%m/%d/%Y", "%m.%d.%Y"]),
+        # YYYY-MM-DD, YYYY/MM/DD, YYYY.MM.DD
+        (r"^\d{4}[-/.]\d{1,2}[-/.]\d{1,2}$", ["%Y-%m-%d", "%Y/%m/%d", "%Y.%m.%d"]),
+        # DD-MM-YY, DD/MM/YY, DD.MM.YY
+        (r"^\d{1,2}[-/.]\d{1,2}[-/.]\d{2}$", ["%d-%m-%y", "%d/%m/%y", "%d.%m.%y"]),
+        # MM-DD-YY, MM/DD/YY, MM.DD.YY
+        (r"^\d{1,2}[-/.]\d{1,2}[-/.]\d{2}$", ["%m-%d-%y", "%m/%d/%y", "%m.%d.%y"]),
+        # ISO format with time
+        (
+            r"^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}",
+            ["%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S"],
+        ),
+        # Month names
+        (
+            r"^\d{1,2}\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{4}$",
+            ["%d %b %Y"],
+        ),
+        (
+            r"^(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2},?\s+\d{4}$",
+            ["%b %d, %Y", "%b %d %Y"],
+        ),
+    ]
+
+    best_result: DateTimeDetectionResult = {
+        "is_datetime": False,
+        "confidence": 0.0,
+        "format": None,
+        "successful_parses": 0,
+    }
+
+    for pattern_regex, formats in datetime_patterns:
+        # Check if values match the pattern
+        pattern_matches = sample.str.match(pattern_regex, case=False).sum()
+        if pattern_matches == 0:
+            continue
+
+        # Try each format for this pattern
+        for fmt in formats:
+            try:
+                successful_parses = 0
+                for value in sample.head(min(100, len(sample))):
+                    try:
+                        pd.to_datetime(value, format=fmt, errors="raise")
+                        successful_parses += 1
+                    except (ValueError, TypeError):
+                        continue
+
+                if successful_parses > 0:
+                    confidence = successful_parses / len(
+                        sample.head(min(100, len(sample)))
+                    )
+                    if confidence > best_result["confidence"]:
+                        best_result = {
+                            "is_datetime": confidence
+                            >= 0.7,  # At least 70% success rate
+                            "confidence": confidence,
+                            "format": fmt,
+                            "successful_parses": successful_parses,
+                        }
+            except Exception:
+                continue
+
+    # Also try pandas' flexible parsing as fallback
+    if not best_result["is_datetime"]:
+        try:
+            parsed = pd.to_datetime(sample.head(min(50, len(sample))), errors="coerce")
+            valid_parses = parsed.notna().sum()
+            confidence = valid_parses / len(parsed)
+            if confidence >= 0.7:
+                best_result = {
+                    "is_datetime": True,
+                    "confidence": confidence,
+                    "format": "infer",  # Let pandas infer
+                    "successful_parses": valid_parses,
+                }
+        except Exception:
+            pass
+
+    return best_result
+
+
+class DateTimeConverter(BaseEstimator, TransformerMixin):
+    """Convert string columns that contain datetime values to actual datetime types."""
+
+    def __init__(self, confidence_threshold: float = 0.7, sample_size: int = 1000):
+        self.confidence_threshold = confidence_threshold
+        self.sample_size = sample_size
+        self.datetime_cols_: Dict[str, DateTimeDetectionResult] = {}
+
+    def fit(self, X: Union[pd.DataFrame, np.ndarray], y=None):
+        if not isinstance(X, pd.DataFrame):
+            self.datetime_cols_ = {}
+            logger.warning("DateTimeConverter received non-DataFrame; skipping")
+            return self
+
+        # Only check object/string columns
+        string_cols = X.select_dtypes(include=["object", "category"]).columns
+
+        for col in string_cols:
+            try:
+                detection_result = _detect_datetime_patterns(X[col], self.sample_size)
+                if (
+                    detection_result["is_datetime"]
+                    and detection_result["confidence"] >= self.confidence_threshold
+                ):
+                    self.datetime_cols_[col] = detection_result
+                    logger.info(
+                        "[DateTimeConverter] Detected datetime column '%s' with %.1f%% confidence (format: %s)",
+                        col,
+                        detection_result["confidence"] * 100,
+                        detection_result["format"],
+                    )
+            except Exception as e:
+                logger.warning(
+                    "Error analyzing column %s for datetime conversion: %s", col, e
+                )
+                continue
+
+        if self.datetime_cols_:
+            logger.info(
+                "[DateTimeConverter] Found %d datetime columns to convert",
+                len(self.datetime_cols_),
+            )
+        else:
+            logger.info("[DateTimeConverter] No datetime columns detected")
+
+        return self
+
+    def transform(
+        self, X: Union[pd.DataFrame, np.ndarray]
+    ) -> Union[pd.DataFrame, np.ndarray]:
+        if not isinstance(X, pd.DataFrame) or not self.datetime_cols_:
+            return X
+
+        X_out = X.copy()
+
+        for col, detection_info in self.datetime_cols_.items():
+            if col not in X_out.columns:
+                continue
+
+            try:
+                fmt = detection_info["format"]
+                if fmt == "infer":
+                    # Let pandas infer the format
+                    X_out[col] = pd.to_datetime(X_out[col], errors="coerce")
+                else:
+                    # Use the specific format we detected
+                    X_out[col] = pd.to_datetime(X_out[col], format=fmt, errors="coerce")
+
+            except Exception as e:
+                logger.warning("Error converting column %s to datetime: %s", col, e)
+                continue
+
+        return X_out
+
+
 # outlier utilities
-
-
 def fit_outlier_params(
     df: pd.DataFrame, target: str, cfg: CleaningConfig
 ) -> Dict[str, Any]:
