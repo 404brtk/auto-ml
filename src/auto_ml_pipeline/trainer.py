@@ -23,7 +23,6 @@ from auto_ml_pipeline.data_cleaning import (
     apply_outliers,
     FeatureMissingnessDropper,
     ConstantFeatureDropper,
-    NumericLikeCoercer,
 )
 from auto_ml_pipeline.feature_engineering import build_preprocessor
 from auto_ml_pipeline.feature_selection import build_selector
@@ -127,8 +126,6 @@ def build_ml_pipeline(
     selector = build_selector(cfg.selection, cfg.task or TaskType.regression)
 
     steps = [
-        # Numeric coercion (converts string-like numbers to actual numbers)
-        ("numeric_coercer", NumericLikeCoercer(threshold=0.95)),
         # Main preprocessing (imputation, scaling, encoding)
         ("preprocessor", preprocessor),
     ]

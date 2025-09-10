@@ -206,6 +206,10 @@ def clean_data(df: pd.DataFrame, target: str, cfg: CleaningConfig) -> pd.DataFra
     datetime_converter = DateTimeConverter()
     result_df = datetime_converter.fit_transform(result_df)
 
+    # Convert numeric-like strings to actual numbers
+    numeric_coercer = NumericLikeCoercer(threshold=0.95)
+    result_df = numeric_coercer.fit_transform(result_df)
+
     # Only perform row-wise target cleaning pre-split to avoid leakage
     if cfg.drop_missing_target:
         result_df = remove_missing_target(result_df, target)
