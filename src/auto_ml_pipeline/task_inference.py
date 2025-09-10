@@ -90,15 +90,24 @@ def _infer_from_object_column(
     numeric_ratio = y_numeric.notna().mean() if len(y_numeric) > 0 else 0.0
 
     if numeric_ratio >= numeric_threshold:
-        # Mostly numeric-like strings
+        # Mostly numeric-like strings - use consistent thresholds
         nunique_numeric = y_numeric.nunique(dropna=True)
+
+        # Use same dynamic threshold as feature_engineering.py
+        dynamic_threshold = min(100, len(y) * 0.1)
+        effective_threshold = max(cardinality_threshold, dynamic_threshold)
+
         logger.info(
-            "Object column is %.1f%% numeric-coercible with %d unique values",
+            "Object column is %.1f%% numeric-coercible with %d unique values (threshold: %.1f)",
             100 * numeric_ratio,
             nunique_numeric,
+            effective_threshold,
         )
 
-        if nunique_numeric <= cardinality_threshold:
+        if (
+            nunique_numeric <= cardinality_threshold
+            and nunique_numeric <= dynamic_threshold
+        ):
             return TaskType.classification
         else:
             return TaskType.regression
@@ -117,19 +126,34 @@ def _infer_from_numeric_column(y: pd.Series, cardinality_threshold: int) -> Task
     nunique = y.nunique(dropna=True)
     dtype_kind = y.dtype.kind
 
-    # Integer types with low cardinality -> likely classification
-    if dtype_kind in {"i", "u"} and nunique <= cardinality_threshold:
-        logger.info("Integer target with %d unique values -> classification", nunique)
-        return TaskType.classification
+    # Use same heuristic as feature_engineering.py for consistency
+    # Dynamic threshold based on sample size, with minimum of 100
+    dynamic_threshold = min(100, len(y) * 0.1)
+    effective_threshold = max(cardinality_threshold, dynamic_threshold)
 
-    # Float types or high-cardinality integers -> regression
-    if dtype_kind in {"f"} or nunique > cardinality_threshold:
+    # Float types -> regression (continuous by nature)
+    if dtype_kind in {"f"}:
         logger.info(
-            "Numeric target (dtype=%s) with %d unique values -> regression",
+            "Float target (dtype=%s) with %d unique values -> regression",
             y.dtype,
             nunique,
         )
         return TaskType.regression
+
+    # Integer types: use dynamic threshold for better detection
+    if dtype_kind in {"i", "u"}:
+        if nunique <= cardinality_threshold and nunique <= dynamic_threshold:
+            logger.info(
+                "Integer target with %d unique values -> classification", nunique
+            )
+            return TaskType.classification
+        else:
+            logger.info(
+                "Integer target with %d unique values (threshold: %.1f) -> regression",
+                nunique,
+                effective_threshold,
+            )
+            return TaskType.regression
 
     # Fallback for other numeric types
     logger.info("Numeric target -> regression (fallback)")
