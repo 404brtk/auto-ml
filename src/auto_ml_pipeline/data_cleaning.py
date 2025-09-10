@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+import warnings
 from typing import List, Dict, Any, Optional, Union, TypedDict
 from auto_ml_pipeline.config import CleaningConfig
 from auto_ml_pipeline.logging_utils import get_logger
@@ -557,6 +558,9 @@ def _detect_datetime_patterns(
             r"^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}",
             ["%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S"],
         ),
+        # Time-only formats HH:MM:SS and HH:MM
+        (r"^\d{1,2}:\d{2}:\d{2}$", ["%H:%M:%S"]),
+        (r"^\d{1,2}:\d{2}$", ["%H:%M"]),
         # Month names
         (
             r"^\d{1,2}\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{4}$",
@@ -610,7 +614,15 @@ def _detect_datetime_patterns(
     # Also try pandas' flexible parsing as fallback
     if not best_result["is_datetime"]:
         try:
-            parsed = pd.to_datetime(sample.head(min(50, len(sample))), errors="coerce")
+            with warnings.catch_warnings():
+                warnings.filterwarnings(
+                    "ignore",
+                    message="Could not infer format, so each element will be parsed individually",
+                    category=UserWarning,
+                )
+                parsed = pd.to_datetime(
+                    sample.head(min(50, len(sample))), errors="coerce"
+                )
             valid_parses = parsed.notna().sum()
             confidence = valid_parses / len(parsed)
             if confidence >= 0.7:
@@ -663,12 +675,7 @@ class DateTimeConverter(BaseEstimator, TransformerMixin):
                 )
                 continue
 
-        if self.datetime_cols_:
-            logger.info(
-                "[DateTimeConverter] Found %d datetime columns to convert",
-                len(self.datetime_cols_),
-            )
-        else:
+        if not self.datetime_cols_:
             logger.info("[DateTimeConverter] No datetime columns detected")
 
         return self
@@ -688,8 +695,14 @@ class DateTimeConverter(BaseEstimator, TransformerMixin):
             try:
                 fmt = detection_info["format"]
                 if fmt == "infer":
-                    # Let pandas infer the format
-                    X_out[col] = pd.to_datetime(X_out[col], errors="coerce")
+                    # Let pandas infer the format (suppress noisy UserWarning)
+                    with warnings.catch_warnings():
+                        warnings.filterwarnings(
+                            "ignore",
+                            message="Could not infer format, so each element will be parsed individually",
+                            category=UserWarning,
+                        )
+                        X_out[col] = pd.to_datetime(X_out[col], errors="coerce")
                 else:
                     # Use the specific format we detected
                     X_out[col] = pd.to_datetime(X_out[col], format=fmt, errors="coerce")
