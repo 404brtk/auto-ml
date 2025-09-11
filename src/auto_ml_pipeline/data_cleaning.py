@@ -638,6 +638,9 @@ def _detect_datetime_patterns(
     return best_result
 
 
+# [Example datetime conversion]
+#  arr_time: raw=['21:05', '08:40', '06:35'] -> clean=['1900-01-01 21:05:00', '1900-01-01 08:40:00', '1900-01-01 06:35:00']
+# FIXME: the current implementation is awkward because it unnecessarily adds a default date to the time values
 class DateTimeConverter(BaseEstimator, TransformerMixin):
     """Convert string columns that contain datetime values to actual datetime types."""
 
