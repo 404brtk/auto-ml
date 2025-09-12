@@ -60,6 +60,7 @@ class FeatureEngineeringConfig(BaseModel):
 
     # Feature extraction
     extract_datetime: bool = True
+    extract_time: bool = True
     handle_text: bool = False
     max_features_text: int = Field(default=2000, ge=100, le=10000)
     text_length_threshold: int = Field(default=50, ge=10, le=200)
@@ -96,7 +97,7 @@ class ModelsConfig(BaseModel):
     If both are provided, include takes precedence and exclude is applied after include.
     """
 
-    include: Optional[List[str]] = ["lightgbm"]
+    include: Optional[List[str]] = ["xgboost"]
     exclude: Optional[List[str]] = Field(default=None)
 
 

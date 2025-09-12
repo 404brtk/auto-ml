@@ -203,6 +203,10 @@ def clean_data(df: pd.DataFrame, target: str, cfg: CleaningConfig) -> pd.DataFra
     if cfg.drop_duplicates:
         result_df = drop_duplicates(result_df)
 
+    # Convert time-only columns
+    time_converter = TimeConverter()
+    result_df = time_converter.fit_transform(result_df)
+
     # Convert datetime columns
     datetime_converter = DateTimeConverter()
     result_df = datetime_converter.fit_transform(result_df)
@@ -516,9 +520,16 @@ class NumericLikeCoercer(BaseEstimator, TransformerMixin):
         return X_out
 
 
-# datetime detection and conversion utilities
+# datetime and time detection and conversion utilities
 class DateTimeDetectionResult(TypedDict):
     is_datetime: bool
+    confidence: float
+    format: Optional[str]
+    successful_parses: int
+
+
+class TimeDetectionResult(TypedDict):
+    is_time: bool
     confidence: float
     format: Optional[str]
     successful_parses: int
@@ -541,6 +552,17 @@ def _detect_datetime_patterns(
     if len(sample) > sample_size:
         sample = sample.sample(n=sample_size, random_state=42)
 
+    # Check if this appears to be a time-only column (already processed by TimeConverter)
+    # If 70% or more values match HH:MM:SS pattern, exclude from datetime detection
+    time_pattern_matches = sample.str.match(r"^\d{1,2}:\d{2}:\d{2}$").sum()
+    if len(sample) > 0 and time_pattern_matches >= 0.7 * len(sample):
+        return {
+            "is_datetime": False,
+            "confidence": 0.0,
+            "format": None,
+            "successful_parses": 0,
+        }
+
     # Common datetime patterns to test
     datetime_patterns = [
         # DD-MM-YYYY, DD/MM/YYYY, DD.MM.YYYY
@@ -558,9 +580,6 @@ def _detect_datetime_patterns(
             r"^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}",
             ["%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S"],
         ),
-        # Time-only formats HH:MM:SS and HH:MM
-        (r"^\d{1,2}:\d{2}:\d{2}$", ["%H:%M:%S"]),
-        (r"^\d{1,2}:\d{2}$", ["%H:%M"]),
         # Month names
         (
             r"^\d{1,2}\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{4}$",
@@ -612,35 +631,39 @@ def _detect_datetime_patterns(
                 continue
 
     # Also try pandas' flexible parsing as fallback
+    # But skip if this looks like time-only data that should be handled by TimeConverter
     if not best_result["is_datetime"]:
-        try:
-            with warnings.catch_warnings():
-                warnings.filterwarnings(
-                    "ignore",
-                    message="Could not infer format, so each element will be parsed individually",
-                    category=UserWarning,
-                )
-                parsed = pd.to_datetime(
-                    sample.head(min(50, len(sample))), errors="coerce"
-                )
-            valid_parses = parsed.notna().sum()
-            confidence = valid_parses / len(parsed)
-            if confidence >= 0.7:
-                best_result = {
-                    "is_datetime": True,
-                    "confidence": confidence,
-                    "format": "infer",  # Let pandas infer
-                    "successful_parses": valid_parses,
-                }
-        except Exception:
+        # Double-check for time patterns before pandas fallback
+        time_pattern_matches = sample.str.match(r"^\d{1,2}:\d{2}:\d{2}$").sum()
+        if len(sample) > 0 and time_pattern_matches >= 0.7 * len(sample):
+            # Skip pandas fallback for time-only data
             pass
+        else:
+            try:
+                with warnings.catch_warnings():
+                    warnings.filterwarnings(
+                        "ignore",
+                        message="Could not infer format, so each element will be parsed individually",
+                        category=UserWarning,
+                    )
+                    parsed = pd.to_datetime(
+                        sample.head(min(50, len(sample))), errors="coerce"
+                    )
+                valid_parses = parsed.notna().sum()
+                confidence = valid_parses / len(parsed)
+                if confidence >= 0.7:
+                    best_result = {
+                        "is_datetime": True,
+                        "confidence": confidence,
+                        "format": "infer",  # Let pandas infer
+                        "successful_parses": valid_parses,
+                    }
+            except Exception:
+                pass
 
     return best_result
 
 
-# [Example datetime conversion]
-#  arr_time: raw=['21:05', '08:40', '06:35'] -> clean=['1900-01-01 21:05:00', '1900-01-01 08:40:00', '1900-01-01 06:35:00']
-# FIXME: the current implementation is awkward because it unnecessarily adds a default date to the time values
 class DateTimeConverter(BaseEstimator, TransformerMixin):
     """Convert string columns that contain datetime values to actual datetime types."""
 
@@ -712,6 +735,162 @@ class DateTimeConverter(BaseEstimator, TransformerMixin):
 
             except Exception as e:
                 logger.warning("Error converting column %s to datetime: %s", col, e)
+                continue
+
+        return X_out
+
+
+def _detect_time_patterns(
+    series: pd.Series, sample_size: int = 1000
+) -> TimeDetectionResult:
+    """Detect common time-only patterns in a string series."""
+    # Sample the series for efficiency
+    sample = series.dropna().astype(str).str.strip()
+    if len(sample) == 0:
+        return {
+            "is_time": False,
+            "confidence": 0.0,
+            "format": None,
+            "successful_parses": 0,
+        }
+
+    if len(sample) > sample_size:
+        sample = sample.sample(n=sample_size, random_state=42)
+
+    # Time-only patterns to test
+    time_patterns = [
+        # HH:MM:SS
+        (r"^\d{1,2}:\d{2}:\d{2}$", ["%H:%M:%S"]),
+        # HH:MM
+        (r"^\d{1,2}:\d{2}$", ["%H:%M"]),
+        # HH:MM AM/PM
+        (r"^\d{1,2}:\d{2}\s*(AM|PM|am|pm)$", ["%I:%M %p"]),
+        # HH:MM:SS AM/PM
+        (r"^\d{1,2}:\d{2}:\d{2}\s*(AM|PM|am|pm)$", ["%I:%M:%S %p"]),
+    ]
+
+    best_result: TimeDetectionResult = {
+        "is_time": False,
+        "confidence": 0.0,
+        "format": None,
+        "successful_parses": 0,
+    }
+
+    for pattern_regex, formats in time_patterns:
+        # Check if values match the pattern
+        pattern_matches = sample.str.match(pattern_regex, case=False).sum()
+        if pattern_matches == 0:
+            continue
+
+        # Try each format for this pattern
+        for fmt in formats:
+            try:
+                successful_parses = 0
+                for value in sample.head(min(100, len(sample))):
+                    try:
+                        pd.to_datetime(value, format=fmt, errors="raise")
+                        successful_parses += 1
+                    except (ValueError, TypeError):
+                        continue
+
+                if successful_parses > 0:
+                    confidence = successful_parses / len(
+                        sample.head(min(100, len(sample)))
+                    )
+                    if confidence > best_result["confidence"]:
+                        best_result = {
+                            "is_time": confidence >= 0.7,  # At least 70% success rate
+                            "confidence": confidence,
+                            "format": fmt,
+                            "successful_parses": successful_parses,
+                        }
+            except Exception:
+                continue
+
+    return best_result
+
+
+# [Example time conversion]
+#  arr_time: raw=['21:05', '08:40', '06:35'] -> clean=['21:05:00', '08:40:00', '06:35:00']
+class TimeConverter(BaseEstimator, TransformerMixin):
+    """Convert string columns that contain time-only values to normalized time strings."""
+
+    def __init__(self, confidence_threshold: float = 0.7, sample_size: int = 1000):
+        self.confidence_threshold = confidence_threshold
+        self.sample_size = sample_size
+        self.time_cols_: Dict[str, TimeDetectionResult] = {}
+
+    def fit(self, X: Union[pd.DataFrame, np.ndarray], y=None):
+        if not isinstance(X, pd.DataFrame):
+            self.time_cols_ = {}
+            logger.warning("TimeConverter received non-DataFrame; skipping")
+            return self
+
+        # Only check object/string columns
+        string_cols = X.select_dtypes(include=["object", "category"]).columns
+
+        for col in string_cols:
+            try:
+                detection_result = _detect_time_patterns(X[col], self.sample_size)
+                if (
+                    detection_result["is_time"]
+                    and detection_result["confidence"] >= self.confidence_threshold
+                ):
+                    self.time_cols_[col] = detection_result
+                    logger.info(
+                        "[TimeConverter] Detected time column '%s' with %.1f%% confidence (format: %s)",
+                        col,
+                        detection_result["confidence"] * 100,
+                        detection_result["format"],
+                    )
+            except Exception as e:
+                logger.warning(
+                    "Error analyzing column %s for time conversion: %s", col, e
+                )
+                continue
+
+        if not self.time_cols_:
+            logger.info("[TimeConverter] No time columns detected")
+
+        return self
+
+    def transform(
+        self, X: Union[pd.DataFrame, np.ndarray]
+    ) -> Union[pd.DataFrame, np.ndarray]:
+        if not isinstance(X, pd.DataFrame) or not self.time_cols_:
+            return X
+
+        X_out = X.copy()
+
+        for col, detection_info in self.time_cols_.items():
+            if col not in X_out.columns:
+                continue
+
+            try:
+                fmt = detection_info["format"]
+
+                # Parse the time values and convert to normalized time strings
+                parsed_times: List[Optional[str]] = []
+                for value in X_out[col]:
+                    if pd.isna(value):
+                        parsed_times.append(None)
+                        continue
+
+                    try:
+                        # Parse as time and extract time components
+                        time_obj = pd.to_datetime(
+                            str(value), format=fmt, errors="raise"
+                        ).time()
+                        # Convert to HH:MM:SS format
+                        normalized_time = time_obj.strftime("%H:%M:%S")
+                        parsed_times.append(normalized_time)
+                    except (ValueError, TypeError):
+                        parsed_times.append(None)
+
+                X_out[col] = parsed_times
+
+            except Exception as e:
+                logger.warning("Error converting column %s to time: %s", col, e)
                 continue
 
         return X_out

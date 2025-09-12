@@ -100,6 +100,7 @@ class ColumnTypes:
     categorical_low: List[str]
     categorical_high: List[str]
     datetime: List[str]
+    time: List[str]
     text: List[str]
 
 
@@ -113,14 +114,18 @@ def categorize_columns(df: pd.DataFrame, cfg: FeatureEngineeringConfig) -> Colum
 
     categorical_low = []
     categorical_high = []
+    time_cols = []
     text_cols = []
 
     for col in object_cols:
         nunique = df[col].nunique(dropna=True)
         sample_values = df[col].dropna().head(100).astype(str)
         avg_length = sample_values.str.len().mean() if len(sample_values) > 0 else 0
+        time_pattern_matches = sample_values.str.match(r"^\d{1,2}:\d{2}:\d{2}$").sum()
 
-        if avg_length > cfg.text_length_threshold:
+        if len(sample_values) > 0 and time_pattern_matches >= 0.7 * len(sample_values):
+            time_cols.append(col)
+        elif avg_length > cfg.text_length_threshold:
             text_cols.append(col)
         elif nunique > cfg.encoding.high_cardinality_threshold:
             categorical_high.append(col)
@@ -128,7 +133,12 @@ def categorize_columns(df: pd.DataFrame, cfg: FeatureEngineeringConfig) -> Colum
             categorical_low.append(col)
 
     return ColumnTypes(
-        numeric_cols, categorical_low, categorical_high, datetime_cols, text_cols
+        numeric_cols,
+        categorical_low,
+        categorical_high,
+        datetime_cols,
+        time_cols,
+        text_cols,
     )
 
 
@@ -178,6 +188,78 @@ class SimpleDateTimeFeatures(BaseEstimator, TransformerMixin):
         return np.array(self.feature_names_out_)
 
 
+class SimpleTimeFeatures(BaseEstimator, TransformerMixin):
+    """Extract basic time features (hour, minute, second, is_business_hours, time_of_day_category)."""
+
+    def __init__(self):
+        self.time_cols_: List[str] = []
+        self.feature_names_out_: List[str] = []
+
+    def fit(self, X: pd.DataFrame, y=None):
+        """Fit stores time columns and generates output feature names."""
+        self.time_cols_ = X.columns.tolist()
+        self.feature_names_out_ = []
+        for col in self.time_cols_:
+            self.feature_names_out_.extend(
+                [
+                    f"{col}_hour",
+                    f"{col}_minute",
+                    f"{col}_second",
+                    f"{col}_is_business_hours",
+                    f"{col}_time_category",  # 0=night, 1=morning, 2=afternoon, 3=evening
+                ]
+            )
+        return self
+
+    def transform(self, X: pd.DataFrame) -> np.ndarray:
+        """Extract time features as numeric array."""
+        features = []
+        for col in self.time_cols_:
+            # Parse time strings (HH:MM:SS format)
+            time_parts = X[col].astype(str).str.split(":", expand=True)
+
+            # Convert to numeric, fill NaN with 0
+            hours = (
+                pd.to_numeric(time_parts.iloc[:, 0], errors="coerce")
+                .fillna(0)
+                .astype(int)
+            )
+            minutes = (
+                pd.to_numeric(time_parts.iloc[:, 1], errors="coerce")
+                .fillna(0)
+                .astype(int)
+            )
+            seconds = (
+                pd.to_numeric(time_parts.iloc[:, 2], errors="coerce")
+                .fillna(0)
+                .astype(int)
+            )
+
+            # Business hours (9 AM to 5 PM)
+            is_business_hours = ((hours >= 9) & (hours < 17)).astype(int)
+
+            # Time categories: 0=night (0-6), 1=morning (6-12), 2=afternoon (12-18), 3=evening (18-24)
+            time_category = np.where(
+                hours < 6, 0, np.where(hours < 12, 1, np.where(hours < 18, 2, 3))
+            )
+
+            features.extend(
+                [
+                    hours.values,
+                    minutes.values,
+                    seconds.values,
+                    is_business_hours.values,
+                    time_category,
+                ]
+            )
+
+        return np.column_stack(features) if features else np.empty((len(X), 0))
+
+    def get_feature_names_out(self, input_features=None) -> np.ndarray:
+        """Get output feature names for transformed data."""
+        return np.array(self.feature_names_out_)
+
+
 def get_imputer(strategy: str = "auto") -> BaseEstimator:
     """Get appropriate imputer based on strategy."""
     if strategy in ["mean", "median"]:
@@ -210,11 +292,12 @@ def build_preprocessor(
     X = df.drop(columns=[target])
     col_types = categorize_columns(X, cfg)
     logger.info(
-        "Column types: numeric=%d, cat_low=%d, cat_high=%d, datetime=%d, text=%d",
+        "Column types: numeric=%d, cat_low=%d, cat_high=%d, datetime=%d, time=%d, text=%d",
         len(col_types.numeric),
         len(col_types.categorical_low),
         len(col_types.categorical_high),
         len(col_types.datetime),
+        len(col_types.time),
         len(col_types.text),
     )
 
@@ -264,6 +347,16 @@ def build_preprocessor(
             ]
         )
         transformers.append(("datetime", datetime_pipeline, col_types.datetime))
+
+    # Time features
+    if col_types.time and cfg.extract_time:
+        time_pipeline = Pipeline(
+            [
+                ("time_features", SimpleTimeFeatures()),
+                ("imputer", SimpleImputer(strategy="most_frequent")),
+            ]
+        )
+        transformers.append(("time", time_pipeline, col_types.time))
 
     # Text features (combine all text columns into one string per row)
     if col_types.text and cfg.handle_text:
