@@ -869,25 +869,44 @@ class TimeConverter(BaseEstimator, TransformerMixin):
             try:
                 fmt = detection_info["format"]
 
-                # Parse the time values and convert to normalized time strings
-                parsed_times: List[Optional[str]] = []
-                for value in X_out[col]:
-                    if pd.isna(value):
-                        parsed_times.append(None)
-                        continue
+                # Time parsing and normalization
+                try:
+                    # Convert to datetime
+                    datetime_series = pd.to_datetime(
+                        X_out[col], format=fmt, errors="coerce"
+                    )
 
-                    try:
-                        # Parse as time and extract time components
-                        time_obj = pd.to_datetime(
-                            str(value), format=fmt, errors="raise"
-                        ).time()
-                        # Convert to HH:MM:SS format
-                        normalized_time = time_obj.strftime("%H:%M:%S")
-                        parsed_times.append(normalized_time)
-                    except (ValueError, TypeError):
-                        parsed_times.append(None)
+                    # Extract time component and format as HH:MM:SS
+                    # Use dt.time to get time objects, then format them
+                    time_strings = datetime_series.dt.strftime("%H:%M:%S")
 
-                X_out[col] = parsed_times
+                    # Handle NaT values (which become NaN after strftime)
+                    time_strings = time_strings.where(datetime_series.notna(), None)
+
+                    X_out[col] = time_strings
+
+                except Exception as e:
+                    logger.warning(
+                        "Error in vectorized time conversion for column %s, falling back to row-by-row: %s",
+                        col,
+                        e,
+                    )
+                    # Fallback to row-by-row conversion
+                    parsed_times: List[Optional[str]] = []
+                    for value in X_out[col]:
+                        if pd.isna(value):
+                            parsed_times.append(None)
+                            continue
+
+                        try:
+                            time_obj = pd.to_datetime(
+                                str(value), format=fmt, errors="raise"
+                            ).time()
+                            normalized_time = time_obj.strftime("%H:%M:%S")
+                            parsed_times.append(normalized_time)
+                        except (ValueError, TypeError):
+                            parsed_times.append(None)
+                    X_out[col] = parsed_times
 
             except Exception as e:
                 logger.warning("Error converting column %s to time: %s", col, e)
