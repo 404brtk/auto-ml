@@ -19,8 +19,7 @@ from sklearn.pipeline import Pipeline as SkPipeline
 from auto_ml_pipeline.config import PipelineConfig, TaskType
 from auto_ml_pipeline.data_cleaning import (
     clean_data,
-    fit_outlier_params,
-    apply_outliers,
+    OutlierTransformer,
     FeatureMissingnessDropper,
     ConstantFeatureDropper,
 )
@@ -244,21 +243,19 @@ def train(df: pd.DataFrame, target: str, cfg: PipelineConfig) -> TrainResult:
     df_train = pd.concat([X_train, y_train], axis=1)
 
     # Handle outliers
-    outlier_strategy = (cfg.cleaning.outlier_strategy or "").lower()
-    if outlier_strategy not in {"", "none"}:
-        outlier_params = fit_outlier_params(df_train, target, cfg.cleaning)
-        df_train = apply_outliers(
-            df_train, target, cfg.cleaning, outlier_params, "train"
-        )
-        X_train, y_train = df_train.drop(columns=[target]), df_train[target]
-
-        # Apply to test data if configured
-        if (cfg.cleaning.outlier_apply_scope or "train_only").lower() == "both":
-            df_test = pd.concat([X_test, y_test], axis=1)
-            df_test = apply_outliers(
-                df_test, target, cfg.cleaning, outlier_params, "test"
+    if cfg.cleaning.outlier_strategy:
+        try:
+            outlier_transformer = OutlierTransformer(
+                strategy=cfg.cleaning.outlier_strategy,
+                method=cfg.cleaning.outlier_method,
+                iqr_multiplier=cfg.cleaning.outlier_iqr_multiplier,
+                zscore_threshold=cfg.cleaning.outlier_zscore_threshold,
             )
-            X_test, y_test = df_test.drop(columns=[target]), df_test[target]
+            # Fit on X_train only
+            outlier_transformer.fit(X_train)
+            X_train = outlier_transformer.transform(X_train)
+        except Exception as e:
+            logger.warning("Skipping OutlierTransformer due to: %s", e)
 
     logger.info(
         "After outlier handling: train=%s, test=%s", X_train.shape, X_test.shape
@@ -266,7 +263,7 @@ def train(df: pd.DataFrame, target: str, cfg: PipelineConfig) -> TrainResult:
 
     # Apply high-missing and constant feature droppers based on training data
     # These operate on raw DataFrames prior to column-wise preprocessing
-    if cfg.cleaning.feature_missing_threshold is not None:
+    if cfg.cleaning.feature_missing_threshold:
         try:
             miss_dropper = FeatureMissingnessDropper(
                 threshold=cfg.cleaning.feature_missing_threshold

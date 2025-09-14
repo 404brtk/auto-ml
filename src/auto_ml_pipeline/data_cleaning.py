@@ -915,171 +915,214 @@ class TimeConverter(BaseEstimator, TransformerMixin):
         return X_out
 
 
-# outlier utilities
-def fit_outlier_params(
-    df: pd.DataFrame, target: str, cfg: CleaningConfig
-) -> Dict[str, Any]:
-    """Fit outlier detection parameters with error handling."""
-    _validate_config(cfg)
+class OutlierTransformer(BaseEstimator, TransformerMixin):
+    """Detect and handle outliers in numeric features."""
 
-    strategy = (cfg.outlier_strategy or "").lower()
-    if strategy in {None, "", "none"}:
-        return {"strategy": strategy}
+    def __init__(
+        self,
+        strategy: str = "none",
+        method: str = "clip",
+        iqr_multiplier: float = 1.5,
+        zscore_threshold: float = 3.0,
+    ):
+        self.strategy = (strategy or "").lower()
+        self.method = (method or "clip").lower()
+        self.iqr_multiplier = float(iqr_multiplier)
+        self.zscore_threshold = float(zscore_threshold)
 
-    X = df.drop(columns=[target])
-    num_cols = X.select_dtypes(include=[np.number]).columns.tolist()
+        # Fitted parameters
+        self.num_cols_: List[str] = []
+        self.valid_cols_: List[str] = []
+        self.outlier_params_: Dict[str, Any] = {}
 
-    params: Dict[str, Any] = {
-        "strategy": strategy,
-        "num_cols": num_cols,
-        "total_samples": len(X),
-    }
-
-    if len(num_cols) == 0:
-        logger.info("No numeric columns found for outlier detection")
-        return params
-
-    try:
-        if strategy == "iqr":
-            Q1 = X[num_cols].quantile(0.25)
-            Q3 = X[num_cols].quantile(0.75)
-            IQR = Q3 - Q1
-            k = cfg.outlier_iqr_multiplier
-
-            # Handle zero IQR (constant columns)
-            valid_cols = IQR[IQR > 0].index.tolist()
-            if not valid_cols:
-                logger.warning(
-                    "All numeric columns have zero IQR; skipping outlier detection"
-                )
-                return params
-
-            lower = Q1[valid_cols] - k * IQR[valid_cols]
-            upper = Q3[valid_cols] + k * IQR[valid_cols]
-            params.update({"lower": lower, "upper": upper, "valid_cols": valid_cols})
-
-        elif strategy == "zscore":
-            mean = X[num_cols].mean()
-            std = X[num_cols].std(ddof=1)  # Use sample std
-
-            # Filter out columns with zero/near-zero std
-            valid_cols = std[std > 1e-10].index.tolist()
-            if not valid_cols:
-                logger.warning(
-                    "All numeric columns have zero std; skipping outlier detection"
-                )
-                return params
-
-            params.update(
-                {
-                    "mean": mean[valid_cols],
-                    "std": std[valid_cols],
-                    "thr": cfg.outlier_zscore_threshold,
-                    "valid_cols": valid_cols,
-                }
+        # Validation
+        if self.iqr_multiplier <= 0:
+            raise ValueError(
+                f"iqr_multiplier must be positive, got {self.iqr_multiplier}"
+            )
+        if self.zscore_threshold <= 0:
+            raise ValueError(
+                f"zscore_threshold must be positive, got {self.zscore_threshold}"
+            )
+        if self.method not in ["clip", "remove"]:
+            raise ValueError(f"method must be 'clip' or 'remove', got {self.method}")
+        if self.strategy not in ["none", "iqr", "zscore"]:
+            raise ValueError(
+                f"strategy must be 'none', 'iqr', or 'zscore', got {self.strategy}"
             )
 
-    except Exception as e:
-        logger.error(
-            "Error fitting outlier parameters for strategy '%s': %s", strategy, e
-        )
-        return {"strategy": "none"}  # Fallback to no outlier detection
+    def fit(self, X: Union[pd.DataFrame, np.ndarray], y=None):
+        """Fit outlier detection parameters."""
+        if not isinstance(X, pd.DataFrame):
+            logger.warning("OutlierTransformer received non-DataFrame; skipping")
+            return self
 
-    logger.info(
-        "Fitted outlier detection: strategy=%s, valid_cols=%d",
-        strategy,
-        len(params.get("valid_cols", num_cols)),
-    )
-    return params
+        if self.strategy == "none":
+            logger.info("[OutlierTransformer] No outlier detection requested")
+            return self
 
+        self.num_cols_ = X.select_dtypes(include=[np.number]).columns.tolist()
 
-def apply_outliers(
-    df: pd.DataFrame,
-    target: str,
-    cfg: CleaningConfig,
-    params: Dict[str, Any],
-    scope: str,
-) -> pd.DataFrame:
-    """Apply outlier treatment with error handling."""
-    strategy = params.get("strategy")
-    if not strategy or strategy == "none":
-        return df
+        if len(self.num_cols_) == 0:
+            logger.info(
+                "[OutlierTransformer] No numeric columns found for outlier detection"
+            )
+            return self
 
-    valid_cols = params.get("valid_cols", [])
-    if not valid_cols:
-        return df
+        try:
+            if self.strategy == "iqr":
+                Q1 = X[self.num_cols_].quantile(0.25)
+                Q3 = X[self.num_cols_].quantile(0.75)
+                IQR = Q3 - Q1
 
-    # Ensure indices are aligned
-    df_work = df.copy().reset_index(drop=True)
-    X = df_work.drop(columns=[target])
-    y = df_work[target]
-
-    method = (cfg.outlier_method or "clip").lower()
-
-    try:
-        if strategy == "iqr" and "lower" in params and "upper" in params:
-            lower = params["lower"]
-            upper = params["upper"]
-
-            if method == "clip":
-                X[valid_cols] = X[valid_cols].clip(lower=lower, upper=upper, axis=1)
-                outliers_handled = (
-                    (
-                        (df.drop(columns=[target])[valid_cols] < lower)
-                        | (df.drop(columns=[target])[valid_cols] > upper)
+                # Handle zero IQR (constant columns)
+                self.valid_cols_ = IQR[IQR > 0].index.tolist()
+                if not self.valid_cols_:
+                    logger.warning(
+                        "[OutlierTransformer] All numeric columns have zero IQR; skipping outlier detection"
                     )
-                    .sum()
-                    .sum()
-                )
-                logger.info(
-                    "Clipped %d outliers via IQR on %s data", outliers_handled, scope
-                )
-            else:  # remove
-                mask = ~(
-                    ((X[valid_cols] < lower) | (X[valid_cols] > upper)).any(axis=1)
-                )
-                before = len(X)
-                X = X[mask].reset_index(drop=True)
-                y = y[mask].reset_index(drop=True)
-                outliers_handled = before - len(X)
-                logger.info(
-                    "Removed %d outliers via IQR on %s data", outliers_handled, scope
-                )
+                    return self
 
-        elif strategy == "zscore" and "mean" in params and "std" in params:
-            mean = params["mean"]
-            std = params["std"]
-            thr = params.get("thr", 3.0)
-
-            z_scores = (X[valid_cols] - mean) / std
-
-            if method == "clip":
-                clipped = mean + thr * np.sign(z_scores) * std
-                X[valid_cols] = X[valid_cols].where(z_scores.abs() <= thr, clipped)
-                outliers_handled = (z_scores.abs() > thr).sum().sum()
-                logger.info(
-                    "Clipped %d outliers via Z-score on %s data (thr=%.2f)",
-                    outliers_handled,
-                    scope,
-                    thr,
+                lower = (
+                    Q1[self.valid_cols_] - self.iqr_multiplier * IQR[self.valid_cols_]
                 )
-            else:
-                mask = (z_scores.abs() <= thr).all(axis=1)
-                before = len(X)
-                X = X[mask].reset_index(drop=True)
-                y = y[mask].reset_index(drop=True)
-                outliers_handled = before - len(X)
-                logger.info(
-                    "Removed %d outliers via Z-score on %s data (thr=%.2f)",
-                    outliers_handled,
-                    scope,
-                    thr,
+                upper = (
+                    Q3[self.valid_cols_] + self.iqr_multiplier * IQR[self.valid_cols_]
                 )
+                self.outlier_params_ = {"lower": lower, "upper": upper}
 
-    except Exception as e:
-        logger.error("Error applying outlier treatment (%s): %s", strategy, e)
-        return df
+            elif self.strategy == "zscore":
+                mean = X[self.num_cols_].mean()
+                std = X[self.num_cols_].std(ddof=1)  # Use sample std
 
-    # Reconstruct DataFrame maintaining column order
-    result = pd.concat([X, y], axis=1)
-    return result
+                # Filter out columns with zero/near-zero std
+                self.valid_cols_ = std[std > 1e-10].index.tolist()
+                if not self.valid_cols_:
+                    logger.warning(
+                        "[OutlierTransformer] All numeric columns have zero std; skipping outlier detection"
+                    )
+                    return self
+
+                self.outlier_params_ = {
+                    "mean": mean[self.valid_cols_],
+                    "std": std[self.valid_cols_],
+                }
+
+        except Exception as e:
+            logger.error(
+                "[OutlierTransformer] Error fitting outlier parameters for strategy '%s': %s",
+                self.strategy,
+                e,
+            )
+            self.strategy = "none"  # Fallback to no outlier detection
+            return self
+
+        logger.info(
+            "[OutlierTransformer] Fitted outlier detection: strategy=%s, method=%s, valid_cols=%d",
+            self.strategy,
+            self.method,
+            len(self.valid_cols_),
+        )
+        return self
+
+    def transform(
+        self, X: Union[pd.DataFrame, np.ndarray]
+    ) -> Union[pd.DataFrame, np.ndarray]:
+        """Apply outlier treatment."""
+        if not isinstance(X, pd.DataFrame):
+            return X
+
+        if self.strategy == "none" or not self.valid_cols_:
+            return X
+
+        X_work = X.copy()
+
+        try:
+            if (
+                self.strategy == "iqr"
+                and "lower" in self.outlier_params_
+                and "upper" in self.outlier_params_
+            ):
+                lower = self.outlier_params_["lower"]
+                upper = self.outlier_params_["upper"]
+
+                if self.method == "clip":
+                    X_work[self.valid_cols_] = X_work[self.valid_cols_].clip(
+                        lower=lower, upper=upper, axis=1
+                    )
+                    outliers_handled = (
+                        ((X[self.valid_cols_] < lower) | (X[self.valid_cols_] > upper))
+                        .sum()
+                        .sum()
+                    )
+                    if outliers_handled > 0:
+                        logger.info(
+                            "[OutlierTransformer] Clipped %d outliers via IQR",
+                            outliers_handled,
+                        )
+                else:  # remove
+                    mask = ~(
+                        (
+                            (X_work[self.valid_cols_] < lower)
+                            | (X_work[self.valid_cols_] > upper)
+                        ).any(axis=1)
+                    )
+                    before = len(X_work)
+                    X_work = X_work[mask]
+                    removed = before - len(X_work)
+                    if removed > 0:
+                        logger.info(
+                            "[OutlierTransformer] Removed %d outlier rows (%.2f%%) via IQR",
+                            removed,
+                            100 * removed / before,
+                        )
+
+            elif (
+                self.strategy == "zscore"
+                and "mean" in self.outlier_params_
+                and "std" in self.outlier_params_
+            ):
+                mean = self.outlier_params_["mean"]
+                std = self.outlier_params_["std"]
+                z_scores = np.abs((X_work[self.valid_cols_] - mean) / std)
+
+                if self.method == "clip":
+                    # Clip based on z-score threshold
+                    outlier_mask = z_scores > self.zscore_threshold
+                    for col in self.valid_cols_:
+                        col_outliers = outlier_mask[col]
+                        if col_outliers.any():
+                            # Calculate clip bounds
+                            lower_bound = mean[col] - self.zscore_threshold * std[col]
+                            upper_bound = mean[col] + self.zscore_threshold * std[col]
+                            X_work[col] = X_work[col].clip(
+                                lower=lower_bound, upper=upper_bound
+                            )
+
+                    outliers_handled = outlier_mask.sum().sum()
+                    if outliers_handled > 0:
+                        logger.info(
+                            "[OutlierTransformer] Clipped %d outliers via Z-score",
+                            outliers_handled,
+                        )
+                else:  # remove
+                    mask = ~(z_scores > self.zscore_threshold).any(axis=1)
+                    before = len(X_work)
+                    X_work = X_work[mask]
+                    removed = before - len(X_work)
+                    if removed > 0:
+                        logger.info(
+                            "[OutlierTransformer] Removed %d outlier rows (%.2f%%) via Z-score",
+                            removed,
+                            100 * removed / before,
+                        )
+
+        except Exception as e:
+            logger.error(
+                "[OutlierTransformer] Error applying outlier treatment for strategy '%s': %s",
+                self.strategy,
+                e,
+            )
+            return X
+
+        return X_work
