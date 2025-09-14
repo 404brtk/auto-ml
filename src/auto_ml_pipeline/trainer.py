@@ -260,12 +260,20 @@ def train(df: pd.DataFrame, target: str, cfg: PipelineConfig) -> TrainResult:
                 # Use the preserved index to align y_train
                 if hasattr(X_train_cleaned, "index"):
                     # Align y_train with the kept indices from X_train_cleaned
-                    y_train = y_train.loc[X_train_cleaned.index].reset_index(drop=True)
+                    y_train_aligned = y_train.loc[X_train_cleaned.index]
+                    y_train = (
+                        y_train_aligned.reset_index(drop=True)
+                        if hasattr(y_train_aligned, "reset_index")
+                        else y_train_aligned
+                    )
                     X_train = X_train_cleaned.reset_index(drop=True)
                 else:
                     # Fallback: assume first N rows were kept
-                    y_train = y_train.iloc[: len(X_train_cleaned)].reset_index(
-                        drop=True
+                    y_train_sliced = y_train.iloc[: len(X_train_cleaned)]
+                    y_train = (
+                        y_train_sliced.reset_index(drop=True)
+                        if hasattr(y_train_sliced, "reset_index")
+                        else y_train_sliced
                     )
                     X_train = X_train_cleaned
             else:
