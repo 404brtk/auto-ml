@@ -251,15 +251,27 @@ def train(df: pd.DataFrame, target: str, cfg: PipelineConfig) -> TrainResult:
                 iqr_multiplier=cfg.cleaning.outlier_iqr_multiplier,
                 zscore_threshold=cfg.cleaning.outlier_zscore_threshold,
             )
-            # Fit on X_train only
+            # Fit and transform on X_train only (features)
             outlier_transformer.fit(X_train)
-            X_train = outlier_transformer.transform(X_train)
+            X_train_cleaned = outlier_transformer.transform(X_train)
+
+            # If rows were removed, update y_train accordingly
+            if len(X_train_cleaned) != len(X_train):
+                # Use the preserved index to align y_train
+                if hasattr(X_train_cleaned, "index"):
+                    # Align y_train with the kept indices from X_train_cleaned
+                    y_train = y_train.loc[X_train_cleaned.index].reset_index(drop=True)
+                    X_train = X_train_cleaned.reset_index(drop=True)
+                else:
+                    # Fallback: assume first N rows were kept
+                    y_train = y_train.iloc[: len(X_train_cleaned)].reset_index(
+                        drop=True
+                    )
+                    X_train = X_train_cleaned
+            else:
+                X_train = X_train_cleaned
         except Exception as e:
             logger.warning("Skipping OutlierTransformer due to: %s", e)
-
-    logger.info(
-        "After outlier handling: train=%s, test=%s", X_train.shape, X_test.shape
-    )
 
     # Apply high-missing and constant feature droppers based on training data
     # These operate on raw DataFrames prior to column-wise preprocessing
