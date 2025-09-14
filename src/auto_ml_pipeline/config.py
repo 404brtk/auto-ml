@@ -24,17 +24,17 @@ class CleaningConfig(BaseModel):
     # Pre-split cleaning (row-wise operations, no feature learning)
     drop_missing_target: bool = True
     drop_duplicates: bool = True
-    max_missing_features_per_row: Optional[int] = Field(default=None)
+    max_missing_features_per_row: Optional[int] = Field(default=2)
 
     # Post-split cleaning (applied after split, fit on train)
     feature_missing_threshold: Optional[float] = 0.5
     remove_constant: bool = True
 
     # Outlier detection (fit on train, apply to train only)
-    outlier_strategy: Optional[str] = Field(default=None, description="iqr|zscore|none")
+    outlier_strategy: Optional[str] = Field(default=None, description="iqr|zscore|None")
     outlier_method: str = Field(default="clip", description="clip|remove")
-    outlier_iqr_multiplier: float = 1.5
-    outlier_zscore_threshold: float = 3.0
+    outlier_iqr_multiplier: float = Field(default=3.0)
+    outlier_zscore_threshold: float = Field(default=3.0)
 
 
 class ImputationConfig(BaseModel):
@@ -42,7 +42,7 @@ class ImputationConfig(BaseModel):
 
 
 class ScalingConfig(BaseModel):
-    strategy: str = Field(default="standard", description="standard|minmax|robust|none")
+    strategy: str = Field(default="standard", description="standard|minmax|robust|None")
 
 
 class EncodingConfig(BaseModel):
