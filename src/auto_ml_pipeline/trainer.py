@@ -266,7 +266,11 @@ def train(df: pd.DataFrame, target: str, cfg: PipelineConfig) -> TrainResult:
                         if hasattr(y_train_aligned, "reset_index")
                         else y_train_aligned
                     )
-                    X_train = X_train_cleaned.reset_index(drop=True)
+                    X_train = (
+                        X_train_cleaned.reset_index(drop=True)
+                        if hasattr(X_train_cleaned, "reset_index")
+                        else X_train_cleaned
+                    )
                 else:
                     # Fallback: assume first N rows were kept
                     y_train_sliced = y_train.iloc[: len(X_train_cleaned)]
