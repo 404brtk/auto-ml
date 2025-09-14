@@ -920,12 +920,12 @@ class OutlierTransformer(BaseEstimator, TransformerMixin):
 
     def __init__(
         self,
-        strategy: str = "none",
+        strategy: Optional[str] = None,
         method: str = "clip",
         iqr_multiplier: float = 1.5,
         zscore_threshold: float = 3.0,
     ):
-        self.strategy = (strategy or "").lower()
+        self.strategy = strategy.lower() if strategy else None
         self.method = (method or "clip").lower()
         self.iqr_multiplier = float(iqr_multiplier)
         self.zscore_threshold = float(zscore_threshold)
@@ -946,9 +946,9 @@ class OutlierTransformer(BaseEstimator, TransformerMixin):
             )
         if self.method not in ["clip", "remove"]:
             raise ValueError(f"method must be 'clip' or 'remove', got {self.method}")
-        if self.strategy not in ["none", "iqr", "zscore"]:
+        if self.strategy not in [None, "iqr", "zscore"]:
             raise ValueError(
-                f"strategy must be 'none', 'iqr', or 'zscore', got {self.strategy}"
+                f"strategy must be None, 'iqr', or 'zscore', got {self.strategy}"
             )
 
     def fit(self, X: Union[pd.DataFrame, np.ndarray], y=None):
@@ -957,7 +957,7 @@ class OutlierTransformer(BaseEstimator, TransformerMixin):
             logger.warning("OutlierTransformer received non-DataFrame; skipping")
             return self
 
-        if self.strategy == "none":
+        if self.strategy is None:
             logger.info("[OutlierTransformer] No outlier detection requested")
             return self
 
@@ -1035,7 +1035,7 @@ class OutlierTransformer(BaseEstimator, TransformerMixin):
         if not isinstance(X, pd.DataFrame):
             return X
 
-        if self.strategy == "none" or not self.valid_cols_:
+        if self.strategy is None or not self.valid_cols_:
             return X
 
         X_work = X.copy()
