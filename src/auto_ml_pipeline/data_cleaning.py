@@ -1017,12 +1017,15 @@ class OutlierTransformer(BaseEstimator, TransformerMixin):
             self.strategy = "none"  # Fallback to no outlier detection
             return self
 
-        logger.info(
-            "[OutlierTransformer] Fitted outlier detection: strategy=%s, method=%s, valid_cols=%d",
-            self.strategy,
-            self.method,
-            len(self.valid_cols_),
-        )
+        if self.valid_cols_:
+            logger.info(
+                "[OutlierTransformer] Fitted outlier detection: strategy=%s, method=%s, valid_cols=%d",
+                self.strategy,
+                self.method,
+                len(self.valid_cols_),
+            )
+        else:
+            logger.info("[OutlierTransformer] No outlier detection applied")
         return self
 
     def transform(
@@ -1036,6 +1039,7 @@ class OutlierTransformer(BaseEstimator, TransformerMixin):
             return X
 
         X_work = X.copy()
+        original_shape = X_work.shape
 
         try:
             if (
@@ -1124,5 +1128,18 @@ class OutlierTransformer(BaseEstimator, TransformerMixin):
                 e,
             )
             return X
+
+        # Log shape change
+        if X_work.shape != original_shape:
+            logger.info(
+                "[OutlierTransformer] Shape changed: %s -> %s",
+                original_shape,
+                X_work.shape,
+            )
+        else:
+            logger.info(
+                "[OutlierTransformer] Applied outlier treatment: %s (shape unchanged)",
+                original_shape,
+            )
 
         return X_work
