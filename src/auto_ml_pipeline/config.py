@@ -30,12 +30,9 @@ class CleaningConfig(BaseModel):
     feature_missing_threshold: Optional[float] = 0.5
     remove_constant: bool = True
 
-    # Outlier detection (fit on train, apply based on scope)
+    # Outlier detection (fit on train, apply to train only)
     outlier_strategy: Optional[str] = Field(default=None, description="iqr|zscore|none")
     outlier_method: str = Field(default="clip", description="clip|remove")
-    outlier_apply_scope: str = Field(
-        default="train_only", description="train_only|both"
-    )
     outlier_iqr_multiplier: float = 1.5
     outlier_zscore_threshold: float = 3.0
 
