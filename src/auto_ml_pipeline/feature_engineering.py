@@ -333,7 +333,7 @@ def build_preprocessor(
 
         # Optional scaling for encoded features
         if cfg.encoding.scale_high_card:
-            steps.append(("scaler", StandardScaler()))
+            steps.append(("scaler", get_scaler(cfg.scaling.strategy)))
 
         cat_high_pipeline = Pipeline(steps)
         transformers.append(("cat_high", cat_high_pipeline, col_types.categorical_high))
@@ -344,6 +344,7 @@ def build_preprocessor(
             [
                 ("datetime_features", SimpleDateTimeFeatures()),
                 ("imputer", SimpleImputer(strategy="most_frequent")),
+                ("scaler", get_scaler(cfg.scaling.strategy)),
             ]
         )
         transformers.append(("datetime", datetime_pipeline, col_types.datetime))
@@ -354,6 +355,7 @@ def build_preprocessor(
             [
                 ("time_features", SimpleTimeFeatures()),
                 ("imputer", SimpleImputer(strategy="most_frequent")),
+                ("scaler", get_scaler(cfg.scaling.strategy)),
             ]
         )
         transformers.append(("time", time_pipeline, col_types.time))
