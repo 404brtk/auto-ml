@@ -78,6 +78,9 @@ class ImputationConfig(BaseModel):
     strategy: Literal["mean", "median", "knn"] = Field(
         default="median", description="Imputation strategy for missing values"
     )
+    knn_neighbors: int = Field(
+        default=5, ge=1, le=20, description="Number of neighbors for KNN imputation"
+    )
 
 
 class ScalingConfig(BaseModel):

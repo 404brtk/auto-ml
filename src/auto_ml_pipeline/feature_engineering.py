@@ -260,12 +260,12 @@ class SimpleTimeFeatures(BaseEstimator, TransformerMixin):
         return np.array(self.feature_names_out_)
 
 
-def get_imputer(strategy: str = "auto") -> BaseEstimator:
+def get_imputer(strategy: str = "median", knn_neighbors: int = 5) -> BaseEstimator:
     """Get appropriate imputer based on strategy."""
     if strategy in ["mean", "median"]:
         return SimpleImputer(strategy=strategy)
     elif strategy == "knn":
-        return KNNImputer(n_neighbors=5)
+        return KNNImputer(n_neighbors=knn_neighbors)
     else:
         return SimpleImputer(strategy="median")
 
@@ -307,7 +307,10 @@ def build_preprocessor(
     if col_types.numeric:
         numeric_pipeline = Pipeline(
             [
-                ("imputer", get_imputer(cfg.imputation.strategy)),
+                (
+                    "imputer",
+                    get_imputer(cfg.imputation.strategy, cfg.imputation.knn_neighbors),
+                ),
                 ("scaler", get_scaler(cfg.scaling.strategy)),
             ]
         )
