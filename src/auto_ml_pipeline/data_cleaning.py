@@ -810,8 +810,6 @@ def _detect_time_patterns(
     return best_result
 
 
-# [Example time conversion]
-#  arr_time: raw=['21:05', '08:40', '06:35'] -> clean=['21:05:00', '08:40:00', '06:35:00']
 class TimeConverter(BaseEstimator, TransformerMixin):
     """Convert string columns that contain time-only values to normalized time strings."""
 
