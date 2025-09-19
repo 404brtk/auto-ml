@@ -1,8 +1,8 @@
 from dataclasses import dataclass
-from typing import List, Tuple, Union, Dict
+from typing import List, Tuple, Union
 import numpy as np
 import pandas as pd
-from sklearn.base import BaseEstimator, TransformerMixin
+from sklearn.base import BaseEstimator
 from sklearn.compose import ColumnTransformer
 from sklearn.impute import SimpleImputer, KNNImputer
 from sklearn.pipeline import Pipeline
@@ -17,6 +17,11 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 
 from auto_ml_pipeline.config import (
     FeatureEngineeringConfig,
+)
+from auto_ml_pipeline.transformers import (
+    FrequencyEncoder,
+    SimpleDateTimeFeatures,
+    SimpleTimeFeatures,
 )
 from auto_ml_pipeline.logging_utils import get_logger
 
@@ -36,60 +41,6 @@ def combine_text_columns(X):
         return arr
     # Join columns with a space per row
     return np.array([" ".join(row) for row in arr])
-
-
-class FrequencyEncoder(BaseEstimator, TransformerMixin):
-    """Simple frequency encoder that replaces categorical values with their frequency ratios."""
-
-    def __init__(self):
-        self.frequency_maps_: Dict[str, Dict] = {}
-        self.feature_names_in_: List[str] = []
-
-    def fit(self, X: Union[pd.DataFrame, np.ndarray], y=None):
-        """Fit frequency encoder on training data."""
-        if isinstance(X, pd.DataFrame):
-            X_df: pd.DataFrame = X.copy()
-            self.feature_names_in_ = list(X_df.columns)
-        else:
-            # If array input, ensure 2D and create generic column names
-            arr = np.asarray(X)
-            if arr.ndim == 1:
-                arr = arr.reshape(-1, 1)
-            n_cols = arr.shape[1]
-            self.feature_names_in_ = [f"col_{i}" for i in range(n_cols)]
-            X_df = pd.DataFrame(arr, columns=self.feature_names_in_)
-
-        for col in X_df.columns:
-            value_counts = X_df[col].value_counts(dropna=False)
-            self.frequency_maps_[col] = (value_counts / len(X_df)).to_dict()
-        return self
-
-    def transform(self, X: Union[pd.DataFrame, np.ndarray]) -> np.ndarray:
-        """Transform categorical values to frequency ratios."""
-        # Convert to DataFrame for consistent processing
-        if isinstance(X, pd.DataFrame):
-            X_df: pd.DataFrame = X.copy()
-        else:
-            arr = np.asarray(X)
-            if arr.ndim == 1:
-                arr = arr.reshape(-1, 1)
-            X_df = pd.DataFrame(arr, columns=self.feature_names_in_)
-
-        for col in self.feature_names_in_:
-            if col in X_df.columns:
-                if col in self.frequency_maps_:
-                    X_df[col] = X_df[col].map(self.frequency_maps_[col]).fillna(0.0)
-                else:
-                    X_df[col] = 0.0
-            else:
-                X_df[col] = 0.0
-
-        # Return numpy array
-        return X_df[self.feature_names_in_].values
-
-    def get_feature_names_out(self, input_features=None) -> np.ndarray:
-        """Get output feature names for transformed data."""
-        return np.array(self.feature_names_in_)
 
 
 @dataclass
@@ -140,124 +91,6 @@ def categorize_columns(df: pd.DataFrame, cfg: FeatureEngineeringConfig) -> Colum
         time_cols,
         text_cols,
     )
-
-
-class SimpleDateTimeFeatures(BaseEstimator, TransformerMixin):
-    """Extract basic datetime features (year, month, day, dayofweek, quarter, is_weekend)."""
-
-    def __init__(self):
-        self.datetime_cols_: List[str] = []
-        self.feature_names_out_: List[str] = []
-
-    def fit(self, X: pd.DataFrame, y=None):
-        """Fit stores datetime columns and generates output feature names."""
-        self.datetime_cols_ = X.columns.tolist()
-        self.feature_names_out_ = []
-        for col in self.datetime_cols_:
-            self.feature_names_out_.extend(
-                [
-                    f"{col}_year",
-                    f"{col}_month",
-                    f"{col}_day",
-                    f"{col}_dayofweek",
-                    f"{col}_quarter",
-                    f"{col}_is_weekend",
-                ]
-            )
-        return self
-
-    def transform(self, X: pd.DataFrame) -> np.ndarray:
-        """Extract datetime features as numeric array."""
-        features = []
-        for col in self.datetime_cols_:
-            dt_series = pd.to_datetime(X[col], errors="coerce")
-            features.extend(
-                [
-                    dt_series.dt.year.values,
-                    dt_series.dt.month.values,
-                    dt_series.dt.day.values,
-                    dt_series.dt.dayofweek.values,
-                    dt_series.dt.quarter.values,
-                    (dt_series.dt.dayofweek >= 5).astype(int).values,
-                ]
-            )
-        return np.column_stack(features) if features else np.empty((len(X), 0))
-
-    def get_feature_names_out(self, input_features=None) -> np.ndarray:
-        """Get output feature names for transformed data."""
-        return np.array(self.feature_names_out_)
-
-
-class SimpleTimeFeatures(BaseEstimator, TransformerMixin):
-    """Extract basic time features (hour, minute, second, is_business_hours, time_of_day_category)."""
-
-    def __init__(self):
-        self.time_cols_: List[str] = []
-        self.feature_names_out_: List[str] = []
-
-    def fit(self, X: pd.DataFrame, y=None):
-        """Fit stores time columns and generates output feature names."""
-        self.time_cols_ = X.columns.tolist()
-        self.feature_names_out_ = []
-        for col in self.time_cols_:
-            self.feature_names_out_.extend(
-                [
-                    f"{col}_hour",
-                    f"{col}_minute",
-                    f"{col}_second",
-                    f"{col}_is_business_hours",
-                    f"{col}_time_category",  # 0=night, 1=morning, 2=afternoon, 3=evening
-                ]
-            )
-        return self
-
-    def transform(self, X: pd.DataFrame) -> np.ndarray:
-        """Extract time features as numeric array."""
-        features = []
-        for col in self.time_cols_:
-            # Parse time strings (HH:MM:SS format)
-            time_parts = X[col].astype(str).str.split(":", expand=True)
-
-            # Convert to numeric, fill NaN with 0
-            hours = (
-                pd.to_numeric(time_parts.iloc[:, 0], errors="coerce")
-                .fillna(0)
-                .astype(int)
-            )
-            minutes = (
-                pd.to_numeric(time_parts.iloc[:, 1], errors="coerce")
-                .fillna(0)
-                .astype(int)
-            )
-            seconds = (
-                pd.to_numeric(time_parts.iloc[:, 2], errors="coerce")
-                .fillna(0)
-                .astype(int)
-            )
-
-            # Business hours (9 AM to 5 PM)
-            is_business_hours = ((hours >= 9) & (hours < 17)).astype(int)
-
-            # Time categories: 0=night (0-6), 1=morning (6-12), 2=afternoon (12-18), 3=evening (18-24)
-            time_category = np.where(
-                hours < 6, 0, np.where(hours < 12, 1, np.where(hours < 18, 2, 3))
-            )
-
-            features.extend(
-                [
-                    hours.values,
-                    minutes.values,
-                    seconds.values,
-                    is_business_hours.values,
-                    time_category,
-                ]
-            )
-
-        return np.column_stack(features) if features else np.empty((len(X), 0))
-
-    def get_feature_names_out(self, input_features=None) -> np.ndarray:
-        """Get output feature names for transformed data."""
-        return np.array(self.feature_names_out_)
 
 
 def get_imputer(strategy: str = "median", knn_neighbors: int = 5) -> BaseEstimator:

@@ -17,8 +17,8 @@ from sklearn.pipeline import Pipeline as SkPipeline
 
 
 from auto_ml_pipeline.config import PipelineConfig, TaskType
-from auto_ml_pipeline.data_cleaning import (
-    clean_data,
+from auto_ml_pipeline.data_cleaning import clean_data
+from auto_ml_pipeline.transformers import (
     OutlierTransformer,
     FeatureMissingnessDropper,
     ConstantFeatureDropper,
