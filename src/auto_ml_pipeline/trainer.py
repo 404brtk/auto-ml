@@ -243,7 +243,7 @@ def train(df: pd.DataFrame, target: str, cfg: PipelineConfig) -> TrainResult:
     df_train = pd.concat([X_train, y_train], axis=1)
 
     # Handle outliers
-    if cfg.cleaning.outlier_strategy:
+    if cfg.cleaning.outlier_strategy not in [None, "none"]:
         try:
             outlier_transformer = OutlierTransformer(
                 strategy=cfg.cleaning.outlier_strategy,
