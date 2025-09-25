@@ -118,11 +118,9 @@ def get_available_models(task: TaskType, random_state: int) -> Dict[str, Any]:
     return available_models_regression(random_state=random_state, n_jobs=1)
 
 
-def build_ml_pipeline(
-    df: pd.DataFrame, target: str, cfg: PipelineConfig, model: Any
-) -> SkPipeline:
+def build_ml_pipeline(X: pd.DataFrame, cfg: PipelineConfig, model: Any) -> SkPipeline:
     """Build complete ML pipeline with all preprocessing steps."""
-    preprocessor, _ = build_preprocessor(df, target, cfg.features)
+    preprocessor, _ = build_preprocessor(X, cfg.features)
     selector = build_selector(cfg.selection, cfg.task or TaskType.regression)
 
     steps = [
@@ -240,9 +238,6 @@ def train(df: pd.DataFrame, target: str, cfg: PipelineConfig) -> TrainResult:
 
     logger.info("Train/test split: %s / %s", X_train.shape, X_test.shape)
 
-    # Train-only data cleaning
-    df_train = pd.concat([X_train, y_train], axis=1)
-
     # Handle outliers
     if cfg.cleaning.outlier_strategy not in [None, "none"]:
         try:
@@ -310,9 +305,6 @@ def train(df: pd.DataFrame, target: str, cfg: PipelineConfig) -> TrainResult:
         except Exception as e:
             logger.warning("Skipping ConstantFeatureDropper due to: %s", e)
 
-    # Rebuild df_train after column droppers
-    df_train = pd.concat([X_train, y_train], axis=1)
-
     # Setup cross-validation and scoring
     cv = get_cv_splitter(task, cfg.split.n_splits, cfg.split.stratify, random_state)
     scorer_name = get_scorer_name(task, getattr(cfg.eval, "metrics", None))
@@ -343,7 +335,7 @@ def train(df: pd.DataFrame, target: str, cfg: PipelineConfig) -> TrainResult:
         logger.info("Evaluating model: %s", model_name)
 
         # Build pipeline
-        pipeline = build_ml_pipeline(df_train, target, cfg, base_model)
+        pipeline = build_ml_pipeline(X_train, cfg, base_model)
 
         try:
             if cfg.optimization.enabled:
@@ -395,7 +387,7 @@ def train(df: pd.DataFrame, target: str, cfg: PipelineConfig) -> TrainResult:
             )
             baseline_model = baseline_models[baseline_key]
             best_model_name = baseline_key
-            best_pipeline = build_ml_pipeline(df_train, target, cfg, baseline_model)
+            best_pipeline = build_ml_pipeline(X_train, cfg, baseline_model)
             best_params = {}
         except Exception as e:
             logger.exception("Baseline model construction failed: %s", e)
@@ -431,11 +423,10 @@ def train(df: pd.DataFrame, target: str, cfg: PipelineConfig) -> TrainResult:
             # Combine train and test data
             X_full = pd.concat([X_train, X_test], axis=0, ignore_index=True)
             y_full = pd.concat([y_train, y_test], axis=0, ignore_index=True)
-            df_full = pd.concat([X_full, y_full], axis=1)
 
             # Create new pipeline instance with same parameters
             production_pipeline = build_ml_pipeline(
-                df_full, target, cfg, models[best_model_name]
+                X_full, cfg, models[best_model_name]
             )
 
             # Apply best parameters

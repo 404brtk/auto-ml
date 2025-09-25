@@ -118,11 +118,10 @@ def get_scaler(strategy: str = "standard") -> Union[BaseEstimator, str]:
 
 
 def build_preprocessor(
-    df: pd.DataFrame, target: str, cfg: FeatureEngineeringConfig
+    X: pd.DataFrame, cfg: FeatureEngineeringConfig
 ) -> Tuple[ColumnTransformer, ColumnTypes]:
     """Build preprocessing pipeline based on inferred column types."""
 
-    X = df.drop(columns=[target])
     col_types = categorize_columns(X, cfg)
     logger.info(
         "Column types: numeric=%d, cat_low=%d, cat_high=%d, datetime=%d, time=%d, text=%d",
