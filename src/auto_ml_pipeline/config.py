@@ -193,6 +193,10 @@ class OptimizationConfig(BaseModel):
         ge=60,
         description="Timeout in seconds for optimization (None = no timeout)",
     )
+    retrain_on_full_data: bool = Field(
+        default=True,
+        description="Retrain best model on full dataset (train + test) for production use",
+    )
 
 
 class EvalConfig(BaseModel):
@@ -225,7 +229,7 @@ class ModelsConfig(BaseModel):
     """
 
     include: Optional[List[str]] = Field(
-        default=None,
+        default=["xgboost"],
         description="Specific models to include (None = all available models)",
     )
     exclude: Optional[List[str]] = Field(

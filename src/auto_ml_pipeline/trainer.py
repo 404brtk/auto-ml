@@ -48,6 +48,7 @@ class TrainResult:
     best_estimator: Any
     metrics: Dict[str, float]
     best_params: Dict[str, Any]
+    production_estimator: Optional[Any] = None  # Model retrained on full data
 
 
 def get_cv_splitter(task: TaskType, n_splits: int, stratify: bool, random_state: int):
@@ -422,11 +423,45 @@ def train(df: pd.DataFrame, target: str, cfg: PipelineConfig) -> TrainResult:
     metrics = evaluate_predictions(task, y_test, y_pred, y_proba)
     logger.info("Test metrics: %s", metrics)
 
+    # Optionally retrain on full dataset
+    production_estimator = None
+    if cfg.optimization.retrain_on_full_data:
+        logger.info("Retraining best model on full dataset for production use")
+        try:
+            # Combine train and test data
+            X_full = pd.concat([X_train, X_test], axis=0, ignore_index=True)
+            y_full = pd.concat([y_train, y_test], axis=0, ignore_index=True)
+            df_full = pd.concat([X_full, y_full], axis=1)
+
+            # Create new pipeline instance with same parameters
+            production_pipeline = build_ml_pipeline(
+                df_full, target, cfg, models[best_model_name]
+            )
+
+            # Apply best parameters
+            if best_params:
+                param_dict = {f"model__{k}": v for k, v in best_params.items()}
+                production_pipeline.set_params(**param_dict)
+
+            # Fit on full data
+            production_pipeline.fit(X_full, y_full)
+            production_estimator = production_pipeline
+            logger.info(
+                "Production model trained on full dataset (%d samples)", len(X_full)
+            )
+        except Exception as e:
+            logger.warning(
+                "Failed to retrain on full data: %s. Using evaluation model.", e
+            )
+
     # Save results
     run_dir = make_run_dir(cfg.io.output_dir)
     logger.info("Saving results to: %s", run_dir)
 
-    save_model(best_pipeline, run_dir / "model.joblib")
+    save_model(best_pipeline, run_dir / "eval_model.joblib")
+    if production_estimator is not None:
+        save_model(production_estimator, run_dir / "production_model.joblib")
+        logger.info("Saved both evaluation and production models")
     save_json(
         {
             "task": task.value,
@@ -437,6 +472,12 @@ def train(df: pd.DataFrame, target: str, cfg: PipelineConfig) -> TrainResult:
             "random_state": random_state,
             "cv_folds": cfg.split.n_splits,
             "scorer": scorer_name,
+            "retrained_on_full_data": cfg.optimization.retrain_on_full_data,
+            "production_model_available": production_estimator is not None,
+            "eval_model_file": "eval_model.joblib",
+            "production_model_file": (
+                "production_model.joblib" if production_estimator is not None else None
+            ),
         },
         run_dir / "results.json",
     )
@@ -448,4 +489,5 @@ def train(df: pd.DataFrame, target: str, cfg: PipelineConfig) -> TrainResult:
         best_estimator=best_pipeline,
         metrics=metrics,
         best_params=best_params,
+        production_estimator=production_estimator,
     )
