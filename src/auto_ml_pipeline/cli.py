@@ -41,9 +41,7 @@ def run(
     if output:
         cfg.io.output_dir = output
     res = train(df, target, cfg)
-    typer.echo(f"Run dir: {res.run_dir}")
-    typer.echo(f"Best model: {res.best_model_name}  CV score: {res.best_score:.4f}")
-    typer.echo(f"Test metrics: {res.metrics}")
+    typer.echo(f"Training completed! Results saved to: {res.run_dir}")
 
 
 @app.command()
