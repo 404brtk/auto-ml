@@ -1,0 +1,19 @@
+# Quick Start Configuration
+# Minimal configuration for getting started quickly
+# Use defaults for most settings, just customize key options
+split:
+  test_size: 0.2
+  random_state: 42
+
+features:
+  imputation:
+    strategy: "median"
+  scaling:
+    strategy: "standard"
+
+optimization:
+  enabled: true
+  n_trials: 20
+
+models:
+  include: ["xgboost"]

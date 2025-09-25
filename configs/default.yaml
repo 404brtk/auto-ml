@@ -1,0 +1,89 @@
+# AutoML Pipeline Configuration
+# This YAML file contains all configuration options for the AutoML pipeline.
+# Comment/uncomment and modify values as needed.
+
+# ML task type (auto-detected if not specified)
+# task: classification  # or "regression"
+
+# Data splitting configuration
+split:
+  test_size: 0.2          # Proportion of data for testing (0.1-0.9)
+  random_state: 42        # Random seed for reproducibility
+  stratify: true          # Stratify split based on target (recommended)
+  n_splits: 5             # Number of cross-validation folds (2-20)
+
+# Data cleaning configuration
+cleaning:
+  # Pre-split cleaning (applied before train/test split)
+  drop_missing_target: true     # Remove rows with missing target values
+  drop_duplicates: true         # Remove duplicate rows
+  max_missing_features_per_row: 2  # Max missing features per row before dropping
+
+  # Post-split cleaning (applied after split, fitted on training data)
+  feature_missing_threshold: 0.5  # Drop features with >50% missing values
+  remove_constant: true          # Remove constant/zero-variance features
+
+  # Outlier detection (fitted on training data only)
+  outlier_strategy: null        # "iqr", "zscore", or null to disable
+  outlier_method: "clip"        # "clip" or "remove" detected outliers
+  outlier_iqr_multiplier: 1.5   # IQR multiplier (1.5=standard, 3.0=conservative)
+  outlier_zscore_threshold: 3.0 # Z-score threshold for outlier detection
+
+# Feature engineering configuration
+features:
+  # Missing value imputation
+  imputation:
+    strategy: "median"    # "mean", "median", or "knn"
+    knn_neighbors: 5      # Number of neighbors for KNN imputation (1-20)
+
+  # Feature scaling
+  scaling:
+    strategy: "standard"  # "standard", "minmax", "robust", or "none"
+
+  # Categorical encoding
+  encoding:
+    high_cardinality_threshold: 50  # Threshold for high cardinality features (2-1000)
+    scale_high_card: false          # Apply scaling to high cardinality encoded features
+
+  # Feature extraction
+  extract_datetime: true   # Extract features from datetime columns
+  extract_time: true       # Extract features from time-only columns
+  handle_text: false       # Enable text feature extraction (resource intensive)
+  max_features_text: 2000  # Maximum text features to extract (100-10000)
+  text_length_threshold: 50  # Minimum text length for feature extraction (10-500)
+
+# Feature selection configuration
+selection:
+  # Variance-based selection
+  variance_threshold: null  # Remove features with variance below threshold (0+)
+
+  # Correlation-based selection
+  correlation_threshold: null  # Remove features with correlation above threshold (0-1)
+
+  # Univariate selection using mutual information
+  mutual_info_k: null       # Select top K features using mutual information (1+)
+
+  # Dimensionality reduction with PCA
+  pca_components: null      # Number of components (int) or variance ratio (0-1)
+
+# Hyperparameter optimization configuration
+optimization:
+  enabled: true            # Enable hyperparameter optimization
+  n_trials: 50             # Number of optimization trials (1-1000)
+  timeout: 3600            # Timeout in seconds (60+), null for no limit
+  retrain_on_full_data: true  # Retrain best model on full dataset for production
+
+# Model evaluation configuration
+eval:
+  metrics: null            # Custom metrics list, null uses defaults
+
+# Input/Output configuration
+io:
+  dataset_path: null       # Path to input dataset (set via CLI)
+  target: null             # Target column name (set via CLI)
+  output_dir: "outputs"    # Directory for output files
+
+# Model selection configuration
+models:
+  include: ["xgboost"]      # Specific models to include, null = all available
+  exclude: null             # Models to exclude from training
