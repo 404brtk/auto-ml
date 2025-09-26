@@ -1,4 +1,5 @@
 import pandas as pd
+
 from auto_ml_pipeline.config import CleaningConfig
 from auto_ml_pipeline.logging_utils import get_logger
 from auto_ml_pipeline.transformers import (
@@ -7,47 +8,7 @@ from auto_ml_pipeline.transformers import (
     NumericLikeCoercer,
 )
 
-
 logger = get_logger(__name__)
-
-
-def _validate_config(cfg: CleaningConfig) -> None:
-    """Validate cleaning configuration parameters."""
-    if (
-        hasattr(cfg, "feature_missing_threshold")
-        and cfg.feature_missing_threshold is not None
-    ):
-        if not (0 <= cfg.feature_missing_threshold <= 1):
-            raise ValueError(
-                f"feature_missing_threshold must be in [0,1], got {cfg.feature_missing_threshold}"
-            )
-
-    if (
-        hasattr(cfg, "max_missing_features_per_row")
-        and cfg.max_missing_features_per_row is not None
-    ):
-        if cfg.max_missing_features_per_row < 0:
-            raise ValueError(
-                f"max_missing_features_per_row must be non-negative, got {cfg.max_missing_features_per_row}"
-            )
-
-    if (
-        hasattr(cfg, "outlier_iqr_multiplier")
-        and cfg.outlier_iqr_multiplier is not None
-    ):
-        if cfg.outlier_iqr_multiplier <= 0:
-            raise ValueError(
-                f"outlier_iqr_multiplier must be positive, got {cfg.outlier_iqr_multiplier}"
-            )
-
-    if (
-        hasattr(cfg, "outlier_zscore_threshold")
-        and cfg.outlier_zscore_threshold is not None
-    ):
-        if cfg.outlier_zscore_threshold <= 0:
-            raise ValueError(
-                f"outlier_zscore_threshold must be positive, got {cfg.outlier_zscore_threshold}"
-            )
 
 
 def _ensure_target_exists(df: pd.DataFrame, target: str) -> None:
@@ -121,7 +82,6 @@ def drop_duplicates(df: pd.DataFrame) -> pd.DataFrame:
 
 def clean_data(df: pd.DataFrame, target: str, cfg: CleaningConfig) -> pd.DataFrame:
     """Clean data with pre-split operations."""
-    _validate_config(cfg)
     _ensure_target_exists(df, target)
 
     result_df = df.copy()
