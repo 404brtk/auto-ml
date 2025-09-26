@@ -18,6 +18,7 @@ dependencies = [
     "optuna (>=4.5.0,<5.0.0)",
     "xgboost (>=3.0.4,<4.0.0)",
     "lightgbm (>=4.6.0,<5.0.0)",
+    "feature-engine (>=1.9.3,<2.0.0)",
 ]
 
 [tool.poetry]
