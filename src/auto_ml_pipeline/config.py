@@ -38,10 +38,11 @@ class CleaningConfig(BaseModel):
         default=True, description="Drop rows with missing target values"
     )
     drop_duplicates: bool = Field(default=True, description="Remove duplicate rows")
-    max_missing_features_per_row: Optional[int] = Field(
-        default=2,
+    max_missing_row_ratio: Optional[float] = Field(
+        default=0.5,
         ge=0,
-        description="Max missing features per row before dropping (None = no limit)",
+        le=1,
+        description="Max missing ratio per row before dropping (0-1)",
     )
 
     # Post-split cleaning (applied after split, fit on train)
