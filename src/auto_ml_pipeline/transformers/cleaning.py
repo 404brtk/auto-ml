@@ -7,66 +7,6 @@ from sklearn.base import BaseEstimator, TransformerMixin
 logger = get_logger(__name__)
 
 
-def _compute_high_missing_cols(X: pd.DataFrame, threshold: float) -> List[str]:
-    """Identify columns with high missing value ratio."""
-    if not (0 <= threshold <= 1):
-        logger.warning(
-            "feature_missing_threshold %.3f is out of [0,1]; skipping", threshold
-        )
-        return []
-
-    if X.empty:
-        return []
-    miss_ratio = X.isnull().mean()
-    high_missing = miss_ratio[miss_ratio > threshold]
-    return high_missing.index.tolist()
-
-
-class FeatureMissingnessDropper(BaseEstimator, TransformerMixin):
-    """Drop columns with high missing ratio based on training data."""
-
-    def __init__(self, threshold: float = 0.5):
-        if not (0 <= threshold <= 1):
-            raise ValueError(f"threshold must be in [0,1], got {threshold}")
-        self.threshold = float(threshold)
-        self.drop_cols_: List[str] = []
-
-    def fit(self, X: Union[pd.DataFrame, np.ndarray], y=None):
-        if not isinstance(X, pd.DataFrame):
-            self.drop_cols_ = []
-            logger.warning("FeatureMissingnessDropper received non-DataFrame; skipping")
-            return self
-
-        self.drop_cols_ = _compute_high_missing_cols(X, self.threshold)
-
-        if self.drop_cols_:
-            show = ", ".join(self.drop_cols_[:10]) + (
-                f" ... (+{len(self.drop_cols_)-10} more)"
-                if len(self.drop_cols_) > 10
-                else ""
-            )
-            logger.info(
-                "[Dropper] High-missing features to drop (> %.2f): %d -> %s",
-                self.threshold,
-                len(self.drop_cols_),
-                show,
-            )
-        else:
-            logger.info("[Dropper] No high-missing features to drop")
-
-        return self
-
-    def transform(
-        self, X: Union[pd.DataFrame, np.ndarray]
-    ) -> Union[pd.DataFrame, np.ndarray]:
-        if isinstance(X, pd.DataFrame) and self.drop_cols_:
-            # Use intersection to handle cases where columns might not exist
-            cols_to_drop = list(set(self.drop_cols_) & set(X.columns))
-            if cols_to_drop:
-                return X.drop(columns=cols_to_drop)
-        return X
-
-
 class NumericLikeCoercer(BaseEstimator, TransformerMixin):
     """Numeric coercion with number format detection."""
 

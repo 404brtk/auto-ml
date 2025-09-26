@@ -1,6 +1,5 @@
 # Data cleaning transformers
 from .cleaning import (
-    FeatureMissingnessDropper,
     NumericLikeCoercer,
     OutlierTransformer,
 )
@@ -18,7 +17,6 @@ from .encoding import FrequencyEncoder
 
 __all__ = [
     # Cleaning
-    "FeatureMissingnessDropper",
     "NumericLikeCoercer",
     "OutlierTransformer",
     # DateTime

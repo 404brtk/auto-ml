@@ -20,7 +20,6 @@ from auto_ml_pipeline.config import PipelineConfig, TaskType
 from auto_ml_pipeline.data_cleaning import clean_data
 from auto_ml_pipeline.transformers import (
     OutlierTransformer,
-    FeatureMissingnessDropper,
 )
 from auto_ml_pipeline.feature_engineering import build_preprocessor
 from auto_ml_pipeline.feature_selection import build_selector
@@ -282,18 +281,6 @@ def train(df: pd.DataFrame, target: str, cfg: PipelineConfig) -> TrainResult:
 
     # Apply high-missing and constant feature droppers based on training data
     # These operate on raw DataFrames prior to column-wise preprocessing
-    if cfg.cleaning.feature_missing_threshold:
-        try:
-            miss_dropper = FeatureMissingnessDropper(
-                threshold=cfg.cleaning.feature_missing_threshold
-            )
-            # Fit on X_train only
-            miss_dropper.fit(X_train)
-            X_train = miss_dropper.transform(X_train)
-            # Ensure X_test has the same columns
-            X_test = miss_dropper.transform(X_test)
-        except Exception as e:
-            logger.warning("Skipping FeatureMissingnessDropper due to: %s", e)
 
     # Setup cross-validation and scoring
     cv = get_cv_splitter(task, cfg.split.n_splits, cfg.split.stratify, random_state)

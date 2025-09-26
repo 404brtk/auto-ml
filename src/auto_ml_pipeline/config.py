@@ -46,13 +46,6 @@ class CleaningConfig(BaseModel):
     )
 
     # Post-split cleaning (applied after split, fit on train)
-    feature_missing_threshold: Optional[float] = Field(
-        default=0.5,
-        ge=0,
-        le=1,
-        description="Drop features with missing ratio above this threshold",
-    )
-
     # Outlier detection (fit on train, apply to train only)
     outlier_strategy: Optional[Literal["iqr", "zscore", "none"]] = Field(
         default=None, description="Outlier detection strategy"
