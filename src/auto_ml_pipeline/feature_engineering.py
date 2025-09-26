@@ -69,16 +69,29 @@ def categorize_columns(df: pd.DataFrame, cfg: FeatureEngineeringConfig) -> Colum
     text_cols = []
 
     for col in object_cols:
-        nunique = df[col].nunique(dropna=True)
-        sample_values = df[col].dropna().head(100).astype(str)
-        avg_length = sample_values.str.len().mean() if len(sample_values) > 0 else 0
-        time_pattern_matches = sample_values.str.match(r"^\d{1,2}:\d{2}:\d{2}$").sum()
+        if df[col].isna().all():
+            continue
 
-        if len(sample_values) > 0 and time_pattern_matches >= 0.7 * len(sample_values):
+        nunique = df[col].nunique(dropna=True)
+        sample_size = min(500, len(df))
+        sample_values = df[col].dropna().head(sample_size).astype(str)
+
+        if len(sample_values) == 0:
+            continue
+
+        avg_length = sample_values.str.len().mean()
+        time_pattern_matches = sample_values.str.match(
+            r"^\d{1,2}:\d{1,2}:\d{1,2}$"
+        ).sum()
+        time_pattern_pct = time_pattern_matches / len(sample_values)
+        # additional data-driven check for high-cardinality categorical features
+        is_short_and_unique = avg_length <= 20 and nunique > len(sample_values) * 0.8
+
+        if time_pattern_pct >= 0.7:
             time_cols.append(col)
         elif avg_length > cfg.text_length_threshold:
             text_cols.append(col)
-        elif nunique > cfg.encoding.high_cardinality_threshold:
+        elif nunique > cfg.encoding.high_cardinality_threshold or is_short_and_unique:
             categorical_high.append(col)
         else:
             categorical_low.append(col)
@@ -197,6 +210,24 @@ def build_preprocessor(
 
     # Text features (combine all text columns into one string per row)
     if col_types.text and cfg.handle_text:
+        # Data-driven max_features: analyze vocabulary size
+        sample_df = X[col_types.text].head(min(1000, len(X)))
+        combined_sample = combine_text_columns(sample_df)
+        vocab_size = len(set(" ".join(combined_sample).split()))
+
+        # Adaptive max_features: 50% of vocabulary, bounded by config limits
+        adaptive_max_features = min(
+            max(int(vocab_size * 0.5), 100),  # at least 100, at most 50% of vocab
+            cfg.max_features_text,  # don't exceed config limit
+        )
+
+        logger.info(
+            "Text features: vocab_size=%d, adaptive_max_features=%d (config_limit=%d)",
+            vocab_size,
+            adaptive_max_features,
+            cfg.max_features_text,
+        )
+
         text_pipeline = Pipeline(
             [
                 ("imputer", SimpleImputer(strategy="constant", fill_value="")),
@@ -204,7 +235,7 @@ def build_preprocessor(
                 (
                     "tfidf",
                     TfidfVectorizer(
-                        max_features=cfg.max_features_text,
+                        max_features=adaptive_max_features,
                         stop_words="english",
                         ngram_range=(1, 2),
                     ),
