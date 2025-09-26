@@ -1,7 +1,6 @@
 # Data cleaning transformers
 from .cleaning import (
     FeatureMissingnessDropper,
-    ConstantFeatureDropper,
     NumericLikeCoercer,
     OutlierTransformer,
 )
@@ -17,13 +16,9 @@ from .datetime import (
 # Encoding transformers
 from .encoding import FrequencyEncoder
 
-# Selection transformers
-from .selection import CorrelationFilter
-
 __all__ = [
     # Cleaning
     "FeatureMissingnessDropper",
-    "ConstantFeatureDropper",
     "NumericLikeCoercer",
     "OutlierTransformer",
     # DateTime
@@ -33,6 +28,4 @@ __all__ = [
     "SimpleTimeFeatures",
     # Encoding
     "FrequencyEncoder",
-    # Selection
-    "CorrelationFilter",
 ]

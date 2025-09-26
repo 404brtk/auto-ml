@@ -52,9 +52,6 @@ class CleaningConfig(BaseModel):
         le=1,
         description="Drop features with missing ratio above this threshold",
     )
-    remove_constant: bool = Field(
-        default=True, description="Remove constant/zero-variance features"
-    )
 
     # Outlier detection (fit on train, apply to train only)
     outlier_strategy: Optional[Literal["iqr", "zscore", "none"]] = Field(
@@ -136,6 +133,17 @@ class FeatureEngineeringConfig(BaseModel):
 
 class FeatureSelectionConfig(BaseModel):
     """Configuration for feature selection methods."""
+
+    # Constant/quasi-constant features
+    remove_constant: bool = Field(
+        default=True, description="Remove constant/zero-variance features"
+    )
+    constant_tolerance: float = Field(
+        default=0.0,
+        ge=0.0,
+        le=0.5,
+        description="Tolerance for quasi-constant features (0.0 = only truly constant)",
+    )
 
     # Variance-based selection
     variance_threshold: Optional[float] = Field(

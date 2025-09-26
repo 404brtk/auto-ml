@@ -21,7 +21,6 @@ from auto_ml_pipeline.data_cleaning import clean_data
 from auto_ml_pipeline.transformers import (
     OutlierTransformer,
     FeatureMissingnessDropper,
-    ConstantFeatureDropper,
 )
 from auto_ml_pipeline.feature_engineering import build_preprocessor
 from auto_ml_pipeline.feature_selection import build_selector
@@ -295,15 +294,6 @@ def train(df: pd.DataFrame, target: str, cfg: PipelineConfig) -> TrainResult:
             X_test = miss_dropper.transform(X_test)
         except Exception as e:
             logger.warning("Skipping FeatureMissingnessDropper due to: %s", e)
-
-    if cfg.cleaning.remove_constant:
-        try:
-            const_dropper = ConstantFeatureDropper()
-            const_dropper.fit(X_train)
-            X_train = const_dropper.transform(X_train)
-            X_test = const_dropper.transform(X_test)
-        except Exception as e:
-            logger.warning("Skipping ConstantFeatureDropper due to: %s", e)
 
     # Setup cross-validation and scoring
     cv = get_cv_splitter(task, cfg.split.n_splits, cfg.split.stratify, random_state)

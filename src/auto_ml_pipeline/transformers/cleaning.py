@@ -22,22 +22,6 @@ def _compute_high_missing_cols(X: pd.DataFrame, threshold: float) -> List[str]:
     return high_missing.index.tolist()
 
 
-def _compute_constant_cols(X: pd.DataFrame) -> List[str]:
-    """Identify constant columns."""
-    if X.empty:
-        return []
-    constant_cols = []
-    for col in X.columns:
-        try:
-            nunique = X[col].nunique(dropna=True)
-            if nunique <= 1:
-                constant_cols.append(col)
-        except Exception as e:
-            logger.warning("Error checking column %s for constancy: %s", col, e)
-
-    return constant_cols
-
-
 class FeatureMissingnessDropper(BaseEstimator, TransformerMixin):
     """Drop columns with high missing ratio based on training data."""
 
@@ -77,46 +61,6 @@ class FeatureMissingnessDropper(BaseEstimator, TransformerMixin):
     ) -> Union[pd.DataFrame, np.ndarray]:
         if isinstance(X, pd.DataFrame) and self.drop_cols_:
             # Use intersection to handle cases where columns might not exist
-            cols_to_drop = list(set(self.drop_cols_) & set(X.columns))
-            if cols_to_drop:
-                return X.drop(columns=cols_to_drop)
-        return X
-
-
-class ConstantFeatureDropper(BaseEstimator, TransformerMixin):
-    """Drop constant features based on training data."""
-
-    def __init__(self):
-        self.drop_cols_: List[str] = []
-
-    def fit(self, X: Union[pd.DataFrame, np.ndarray], y=None):
-        if not isinstance(X, pd.DataFrame):
-            self.drop_cols_ = []
-            logger.warning("ConstantFeatureDropper received non-DataFrame; skipping")
-            return self
-
-        self.drop_cols_ = _compute_constant_cols(X)
-
-        if self.drop_cols_:
-            show = ", ".join(self.drop_cols_[:10]) + (
-                f" ... (+{len(self.drop_cols_)-10} more)"
-                if len(self.drop_cols_) > 10
-                else ""
-            )
-            logger.info(
-                "[Dropper] Constant features to drop: %d -> %s",
-                len(self.drop_cols_),
-                show,
-            )
-        else:
-            logger.info("[Dropper] No constant features to drop")
-
-        return self
-
-    def transform(
-        self, X: Union[pd.DataFrame, np.ndarray]
-    ) -> Union[pd.DataFrame, np.ndarray]:
-        if isinstance(X, pd.DataFrame) and self.drop_cols_:
             cols_to_drop = list(set(self.drop_cols_) & set(X.columns))
             if cols_to_drop:
                 return X.drop(columns=cols_to_drop)
