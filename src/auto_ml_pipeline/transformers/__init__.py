@@ -1,8 +1,10 @@
 # Data cleaning transformers
 from .cleaning import (
     NumericLikeCoercer,
-    OutlierTransformer,
 )
+
+# Outlier detection transformers
+from .outliers import OutlierTransformer
 
 # DateTime transformers
 from .datetime import (
@@ -18,6 +20,7 @@ from .encoding import FrequencyEncoder
 __all__ = [
     # Cleaning
     "NumericLikeCoercer",
+    # Outliers
     "OutlierTransformer",
     # DateTime
     "DateTimeConverter",
