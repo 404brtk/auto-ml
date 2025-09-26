@@ -150,6 +150,10 @@ class FeatureSelectionConfig(BaseModel):
         lt=1,
         description="Remove features with correlation above this threshold",
     )
+    correlation_method: Literal["pearson", "spearman", "kendall"] = Field(
+        default="pearson",
+        description="Correlation method for correlation-based selection",
+    )
 
     # Univariate selection
     mutual_info_k: Optional[int] = Field(

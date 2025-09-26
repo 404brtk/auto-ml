@@ -9,7 +9,7 @@ from sklearn.feature_selection import (
 from sklearn.pipeline import Pipeline
 from auto_ml_pipeline.config import FeatureSelectionConfig, TaskType
 from auto_ml_pipeline.logging_utils import get_logger
-from auto_ml_pipeline.transformers import CorrelationFilter
+from feature_engine.selection import DropCorrelatedFeatures
 
 logger = get_logger(__name__)
 
@@ -25,7 +25,12 @@ def build_selector(cfg: FeatureSelectionConfig, task: TaskType) -> Optional[Pipe
     # Correlation filtering
     if cfg.correlation_threshold is not None and 0 < cfg.correlation_threshold < 1:
         steps.append(
-            ("correlation", CorrelationFilter(threshold=cfg.correlation_threshold))
+            (
+                "correlation",
+                DropCorrelatedFeatures(
+                    method=cfg.correlation_method, threshold=cfg.correlation_threshold
+                ),
+            )
         )
 
     # Mutual information
