@@ -31,7 +31,7 @@ from auto_ml_pipeline.models import (
 from auto_ml_pipeline.evaluation import evaluate_predictions
 from auto_ml_pipeline.io_utils import make_run_dir, save_json, save_model
 from auto_ml_pipeline.logging_utils import get_logger
-
+from auto_ml_pipeline.task_inference import infer_task
 
 logger = get_logger(__name__)
 
@@ -210,8 +210,6 @@ def train(df: pd.DataFrame, target: str, cfg: PipelineConfig) -> TrainResult:
 
     # Infer task if not specified
     if cfg.task is None:
-        from auto_ml_pipeline.task_inference import infer_task
-
         cfg.task = infer_task(df, target)
 
     task = cfg.task
