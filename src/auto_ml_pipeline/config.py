@@ -132,10 +132,10 @@ class FeatureSelectionConfig(BaseModel):
         default=True, description="Remove constant/zero-variance features"
     )
     constant_tolerance: float = Field(
-        default=0.0,
+        default=1.0,
         ge=0.0,
-        le=0.5,
-        description="Tolerance for quasi-constant features (0.0 = only truly constant)",
+        le=1.0,
+        description="Threshold for constant/quasi-constant features. Drops features where most frequent value >= tol proportion. 1.0 = only constant (100% same).",
     )
 
     # Variance-based selection
