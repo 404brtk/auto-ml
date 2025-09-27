@@ -2,7 +2,7 @@ import random
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Optional
-
+import difflib
 
 import numpy as np
 import pandas as pd
@@ -202,6 +202,32 @@ def optimize_model(
 
 def train(df: pd.DataFrame, target: str, cfg: PipelineConfig) -> TrainResult:
     """Train AutoML pipeline and return best model."""
+
+    # Fuzzy matching for target column
+    if target not in df.columns:
+        # Try case-insensitive match
+        case_matches = [col for col in df.columns if col.lower() == target.lower()]
+        if case_matches:
+            if len(case_matches) == 1:
+                logger.warning(
+                    f"Target column '{target}' not found. Using case-insensitive match: '{case_matches[0]}'"
+                )
+                target = case_matches[0]
+            else:
+                logger.warning(
+                    f"Multiple case-insensitive matches for '{target}': {case_matches}. Using the first: '{case_matches[0]}'"
+                )
+                target = case_matches[0]
+        else:
+            # Closest matches
+            close = difflib.get_close_matches(target, df.columns, n=3, cutoff=0.6)
+            if close:
+                logger.warning(
+                    f"Target column '{target}' not found. Closest matches: {close}"
+                )
+            raise ValueError(
+                f"Target column '{target}' not found. Available: {list(df.columns)}"
+            )
 
     # Set random seeds for reproducibility
     random_state = cfg.split.random_state
