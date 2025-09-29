@@ -27,9 +27,6 @@ from auto_ml_pipeline.logging_utils import get_logger
 
 logger = get_logger(__name__)
 
-# TODO: fix: UserWarning: X does not have valid feature names, but LGBMRegressor was fitted with feature names
-# need to investigate
-
 
 def combine_text_columns(X):
     """Combine multiple text columns into a single string per row."""
@@ -254,7 +251,9 @@ def build_preprocessor(
     logger.info("Built preprocessor with: %s", [name for name, _, _ in transformers])
 
     preprocessor = ColumnTransformer(
-        transformers=transformers, remainder="drop", n_jobs=1  # Avoid threading issues
+        transformers=transformers,
+        remainder="drop",
+        n_jobs=1,  # Avoid threading issues
     )
 
     return preprocessor, col_types
