@@ -1,5 +1,3 @@
-name: CI
-
 on:
   push:
     branches: [ main ]
@@ -14,40 +12,34 @@ jobs:
         python-version: ['3.13']
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
 
-    - name: Install Poetry
-      uses: snok/install-poetry@v1
-      with:
-        version: 2.1.4
-        virtualenvs-create: true
-        virtualenvs-in-project: true
-        installer-parallel: true
-
-    - name: Set up Python ${{ matrix.python-version }} with Poetry cache
+    - name: Set up Python ${{ matrix.python-version }}
       uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python-version }}
-        cache: 'poetry'                # built-in cache for Poetry venvs
-        # cache-dependency-path is optional; defaults to poetry.lock if present
-        # cache-dependency-path: '**/poetry.lock'
+
+    - name: Install UV
+      uses: astral-sh/setup-uv@v6
+      with:
+        enable-cache: true
 
     - name: Install dependencies
       run: |
-        poetry install --with dev --no-interaction --no-ansi
+        uv sync --extra dev
 
     - name: Run tests with pytest
       run: |
-        poetry run pytest -v tests/
+        uv run pytest -v tests/
 
     - name: Run type checking with mypy
       run: |
-        poetry run mypy src/ tests/
+        uv run mypy src/ tests/
 
     - name: Check formatting with Black
       run: |
-        poetry run black --check src/ tests/
+        uv run black --check src/ tests/
 
     - name: Lint with Ruff
       run: |
-        poetry run ruff check src/ tests/
+        uv run ruff check src/ tests/
