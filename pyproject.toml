@@ -21,23 +21,24 @@ dependencies = [
     "feature-engine (>=1.9.3,<2.0.0)",
 ]
 
-[tool.poetry]
-packages = [{include = "auto_ml_pipeline", from = "src"}]
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.4.1",
+    "black>=25.1.0",
+    "ruff>=0.12.10",
+    "mypy>=1.17.1",
+    "pre-commit>=4.3.0",
+]
 
-
-[tool.poetry.group.dev.dependencies]
-pytest = "^8.4.1"
-black = "^25.1.0"
-ruff = "^0.12.10"
-mypy = "^1.17.1"
-pre-commit = "^4.3.0"
-
-[tool.poetry.scripts]
+[project.scripts]
 auto-ml = "auto_ml_pipeline.cli:app"
 
+[tool.hatch.build.targets.wheel]
+packages = ["src/auto_ml_pipeline"]
+
 [build-system]
-requires = ["poetry-core>=2.0.0,<3.0.0"]
-build-backend = "poetry.core.masonry.api"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [tool.black]
 line-length = 88
@@ -55,8 +56,3 @@ plugins = ["pydantic.mypy"]
 python_version = "3.13"
 ignore_missing_imports = true
 check_untyped_defs = true
-
-[tool.pytest.ini_options]
-markers = [
-    "slow: marks tests as slow",
-]
