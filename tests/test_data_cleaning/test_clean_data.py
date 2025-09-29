@@ -1,3 +1,5 @@
+"""Tests for clean_data function."""
+
 import pandas as pd
 import numpy as np
 from auto_ml_pipeline.data_cleaning import clean_data

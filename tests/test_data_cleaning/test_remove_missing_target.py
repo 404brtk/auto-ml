@@ -1,3 +1,5 @@
+"""Tests for remove_missing_target function."""
+
 import pandas as pd
 import numpy as np
 from auto_ml_pipeline.data_cleaning import remove_missing_target

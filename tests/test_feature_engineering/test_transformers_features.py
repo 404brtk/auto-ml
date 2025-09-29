@@ -1,3 +1,5 @@
+"""Tests for SimpleDateTimeFeatures and SimpleTimeFeatures transformers."""
+
 import pandas as pd
 import numpy as np
 
@@ -62,9 +64,9 @@ class TestSimpleDateTimeFeatures:
         transformer = SimpleDateTimeFeatures()
         features = transformer.fit_transform(df)
 
-        # NaN datetime values result in NaN for most features, but is_weekend becomes 0
         # Row 0: valid date
         assert not np.isnan(features[0, :]).any()
+
         # Row 1: NaT date - most features become NaN, but is_weekend becomes 0
         assert np.isnan(features[1, 0])  # year
         assert np.isnan(features[1, 1])  # month
@@ -72,6 +74,7 @@ class TestSimpleDateTimeFeatures:
         assert np.isnan(features[1, 3])  # dayofweek
         assert np.isnan(features[1, 4])  # quarter
         assert features[1, 5] == 0  # is_weekend (False for NaT)
+
         # Row 2: valid date
         assert not np.isnan(features[2, :]).any()
 

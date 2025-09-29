@@ -1,3 +1,5 @@
+"""Tests for drop_duplicates function."""
+
 import pandas as pd
 from auto_ml_pipeline.data_cleaning import drop_duplicates
 
