@@ -98,7 +98,7 @@ class CleaningConfig(BaseModel):
         description="Minimum columns required after cleaning (raises error if below)",
     )
 
-    # Post-split cleaning (applied after split, fit on train, transform train only)
+    # Post-split cleaning (fit on train, transform both train+test for clip, train only for remove)
     outlier: OutlierConfig = Field(default_factory=OutlierConfig)
 
 

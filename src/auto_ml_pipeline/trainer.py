@@ -269,11 +269,11 @@ def train(df: pd.DataFrame, target: str, cfg: PipelineConfig) -> TrainResult:
                 iqr_multiplier=cfg.cleaning.outlier.iqr_multiplier,
                 zscore_threshold=cfg.cleaning.outlier.zscore_threshold,
             )
-            # Fit and transform on X_train only (features)
+            # Fit on training data to learn outlier boundaries
             outlier_transformer.fit(X_train)
             X_train_cleaned = outlier_transformer.transform(X_train)
 
-            # If rows were removed, update y_train accordingly
+            # If rows were removed (method="remove"), update y_train accordingly
             if len(X_train_cleaned) != len(X_train):
                 # Use the preserved index to align y_train
                 if hasattr(X_train_cleaned, "index"):
@@ -300,6 +300,14 @@ def train(df: pd.DataFrame, target: str, cfg: PipelineConfig) -> TrainResult:
                     X_train = X_train_cleaned
             else:
                 X_train = X_train_cleaned
+
+            # For clip method, apply same transformation to test set
+            # For remove method, we don't transform test (can't remove test rows)
+            if cfg.cleaning.outlier.method == "clip":
+                X_test = outlier_transformer.transform(X_test)
+                logger.info(
+                    "Applied outlier clipping to test set using training boundaries"
+                )
         except Exception as e:
             logger.warning("Skipping OutlierTransformer due to: %s", e)
 
