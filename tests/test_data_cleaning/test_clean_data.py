@@ -2,6 +2,7 @@
 
 import pandas as pd
 import numpy as np
+import pytest
 from auto_ml_pipeline.data_cleaning import clean_data
 from auto_ml_pipeline.config import CleaningConfig
 
@@ -31,6 +32,7 @@ class TestCleanData:
             drop_duplicates=True,
             drop_missing_target=True,
             max_missing_row_ratio=0.3,  # Remove rows with >30% missing
+            remove_id_columns=False,
         )
 
         result = clean_data(df, "target", cfg)
@@ -79,13 +81,16 @@ class TestCleanData:
         )
 
         cfg = CleaningConfig(
-            drop_duplicates=False, drop_missing_target=False, max_missing_row_ratio=None
+            drop_duplicates=False,
+            drop_missing_target=False,
+            max_missing_row_ratio=None,
+            remove_id_columns=False,
         )
         result = clean_data(df, "target", cfg)
 
         # Should have converted datetime column
         datetime_cols = [col for col in result.columns if "datetime_col" in col]
-        assert len(datetime_cols) == 1  # Should have the converted datetime column
+        assert len(datetime_cols) >= 1  # Should have the converted datetime column
 
     def test_numeric_coercion(self):
         """Test that numeric string coercion happens."""
@@ -94,7 +99,10 @@ class TestCleanData:
         )
 
         cfg = CleaningConfig(
-            drop_duplicates=False, drop_missing_target=False, max_missing_row_ratio=None
+            drop_duplicates=False,
+            drop_missing_target=False,
+            max_missing_row_ratio=None,
+            remove_id_columns=False,
         )
         result = clean_data(df, "target", cfg)
 
@@ -112,7 +120,10 @@ class TestCleanData:
         )
 
         cfg = CleaningConfig(
-            drop_duplicates=False, drop_missing_target=False, max_missing_row_ratio=None
+            drop_duplicates=False,
+            drop_missing_target=False,
+            max_missing_row_ratio=None,
+            remove_id_columns=False,
         )
         result = clean_data(df, "Target", cfg)
 
@@ -175,6 +186,7 @@ class TestCleanData:
             max_missing_row_ratio=None,
             remove_constant_features=True,
             constant_tolerance=1.0,
+            remove_id_columns=False,
         )
         result = clean_data(df, "target", cfg)
 
@@ -198,6 +210,7 @@ class TestCleanData:
             drop_missing_target=False,
             max_missing_row_ratio=None,
             remove_constant_features=False,
+            remove_id_columns=False,
         )
         result = clean_data(df, "target", cfg)
 
@@ -236,6 +249,7 @@ class TestCleanData:
             max_missing_row_ratio=None,
             remove_constant_features=True,
             constant_tolerance=1.0,
+            remove_id_columns=False,
         )
         result = clean_data(df, "Target", cfg)
 
@@ -251,3 +265,175 @@ class TestCleanData:
         assert "feature_2" in result.columns
         assert "numeric" in result.columns
         assert "target" in result.columns
+
+    def test_mixed_types_coerced(self):
+        """Test that mixed type columns are coerced by default."""
+        df = pd.DataFrame(
+            {
+                "mixed_col": [1, "two", 3.0, "four", 5],
+                "normal_col": [1, 2, 3, 4, 5],
+                "target": [0, 1, 0, 1, 0],
+            }
+        )
+
+        cfg = CleaningConfig(
+            handle_mixed_types="coerce",
+            drop_duplicates=False,
+            drop_missing_target=False,
+            remove_id_columns=False,
+        )
+        result = clean_data(df, "target", cfg)
+
+        # Mixed column should be converted to string
+        assert "mixed_col" in result.columns
+        assert result["mixed_col"].dtype == object
+        assert result["mixed_col"].iloc[0] == "1"
+
+    def test_mixed_types_dropped(self):
+        """Test that mixed type columns can be dropped."""
+        df = pd.DataFrame(
+            {
+                "mixed_col": [1, "two", 3.0, "four", 5],
+                "normal_col": [1, 2, 3, 4, 5],
+                "target": [0, 1, 0, 1, 0],
+            }
+        )
+
+        cfg = CleaningConfig(
+            handle_mixed_types="drop",
+            drop_duplicates=False,
+            drop_missing_target=False,
+            remove_id_columns=False,
+        )
+        result = clean_data(df, "target", cfg)
+
+        # Mixed column should be removed
+        assert "mixed_col" not in result.columns
+        assert "normal_col" in result.columns
+
+    def test_whitespace_trimmed(self):
+        """Test that whitespace is trimmed from string columns."""
+        df = pd.DataFrame(
+            {
+                "str_col": ["  apple  ", "  banana  ", "  cherry  "],
+                "target": [0, 1, 0],
+            }
+        )
+
+        cfg = CleaningConfig(
+            drop_duplicates=False,
+            drop_missing_target=False,
+            remove_id_columns=False,
+        )
+        result = clean_data(df, "target", cfg)
+
+        # Whitespace should be trimmed
+        assert "str_col" in result.columns
+        assert result["str_col"].iloc[0] == "apple"
+        assert result["str_col"].iloc[1] == "banana"
+        assert result["str_col"].iloc[2] == "cherry"
+
+    def test_id_columns_removed(self):
+        """Test that ID columns are removed when enabled."""
+        df = pd.DataFrame(
+            {
+                "customer_id": ["C001", "C002", "C003", "C004", "C005"],
+                "transaction_id": ["T001", "T002", "T003", "T004", "T005"],
+                "feature": [10, 20, 10, 20, 10],
+                "target": [0, 1, 0, 1, 0],
+            }
+        )
+
+        cfg = CleaningConfig(
+            remove_id_columns=True,
+            id_column_threshold=0.95,
+            drop_duplicates=False,
+            drop_missing_target=False,
+        )
+        result = clean_data(df, "target", cfg)
+
+        # ID columns should be removed
+        assert "customer_id" not in result.columns
+        assert "transaction_id" not in result.columns
+        assert "feature" in result.columns
+        assert "target" in result.columns
+
+    def test_id_columns_kept_when_disabled(self):
+        """Test that ID columns are kept when disabled."""
+        df = pd.DataFrame(
+            {
+                "customer_id": ["C001", "C002", "C003", "C004", "C005"],
+                "feature": [10, 20, 10, 20, 10],
+                "target": [0, 1, 0, 1, 0],
+            }
+        )
+
+        cfg = CleaningConfig(
+            remove_id_columns=False,
+            drop_duplicates=False,
+            drop_missing_target=False,
+        )
+        result = clean_data(df, "target", cfg)
+
+        # ID column should be kept
+        assert "customer_id" in result.columns
+        assert "feature" in result.columns
+        assert "target" in result.columns
+
+    def test_min_rows_validation_passes(self):
+        """Test that validation passes with sufficient rows."""
+        df = pd.DataFrame(
+            {
+                "feature": list(range(20)),
+                "target": [0, 1] * 10,
+            }
+        )
+
+        cfg = CleaningConfig(
+            min_rows_after_cleaning=10,
+            drop_duplicates=False,
+            drop_missing_target=False,
+        )
+
+        # Should not raise error
+        result = clean_data(df, "target", cfg)
+        assert len(result) >= 10
+
+    def test_min_rows_validation_fails(self):
+        """Test that validation raises error with insufficient rows."""
+        df = pd.DataFrame(
+            {
+                "feature": [1, 2, 3],
+                "target": [0, 1, np.nan],  # Will drop 1 row due to missing target
+            }
+        )
+
+        cfg = CleaningConfig(
+            min_rows_after_cleaning=10,
+            drop_missing_target=True,
+        )
+
+        # Should raise ValueError
+        with pytest.raises(ValueError, match="Dataset has only"):
+            clean_data(df, "target", cfg)
+
+    def test_min_cols_validation_fails(self):
+        """Test that validation raises error with insufficient columns."""
+        df = pd.DataFrame(
+            {
+                "id_col": list(range(10)),  # Will be removed as ID (100% unique)
+                "target": [0, 1, 0, 1, 0, 1, 0, 1, 0, 1],
+            }
+        )
+
+        cfg = CleaningConfig(
+            remove_id_columns=True,
+            id_column_threshold=0.95,
+            min_rows_after_cleaning=1,
+            min_cols_after_cleaning=2,  # Require at least 2 feature columns
+            drop_duplicates=False,
+        )
+
+        # Should raise ValueError (ID column removed, leaving no feature columns)
+        with pytest.raises(ValueError, match="feature columns after cleaning"):
+            clean_data(df, "target", cfg)

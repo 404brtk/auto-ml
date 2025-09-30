@@ -23,6 +23,63 @@ def _ensure_target_exists(df: pd.DataFrame, target: str) -> None:
         )
 
 
+def handle_mixed_types(df: pd.DataFrame, strategy: str = "coerce") -> pd.DataFrame:
+    df_clean = df.copy()
+    mixed_type_cols = []
+
+    for col in df.columns:
+        if df[col].isna().all():
+            continue
+
+        col_data = df[col].dropna()
+        if len(col_data) == 0:
+            continue
+
+        # Get unique types in the column
+        types = col_data.apply(type).unique()
+
+        # Check if column has mixed numeric and non-numeric types
+        if len(types) > 1:
+            has_numeric = any(
+                isinstance(val, (int, float, np.number)) for val in col_data.head(100)
+            )
+            has_string = any(isinstance(val, str) for val in col_data.head(100))
+
+            if has_numeric and has_string:
+                mixed_type_cols.append(col)
+                type_distribution = col_data.apply(type).value_counts()
+                logger.warning(
+                    "Column '%s' has mixed types: %s",
+                    col,
+                    {t.__name__: count for t, count in type_distribution.items()},
+                )
+
+    if not mixed_type_cols:
+        return df_clean
+
+    logger.warning(
+        "Found %d columns with mixed data types: %s",
+        len(mixed_type_cols),
+        ", ".join(mixed_type_cols[:5])
+        + (
+            f" ... (+{len(mixed_type_cols)-5} more)" if len(mixed_type_cols) > 5 else ""
+        ),
+    )
+
+    # Apply strategy
+    if strategy == "coerce":
+        for col in mixed_type_cols:
+            # Preserve NaN values when converting to string
+            mask = df_clean[col].notna()
+            df_clean.loc[mask, col] = df_clean.loc[mask, col].astype(str)
+        logger.info("Coerced %d mixed-type columns to string", len(mixed_type_cols))
+    elif strategy == "drop":
+        df_clean = df_clean.drop(columns=mixed_type_cols)
+        logger.info("Dropped %d mixed-type columns", len(mixed_type_cols))
+
+    return df_clean
+
+
 def standardize_column_names(df: pd.DataFrame) -> pd.DataFrame:
     df_clean = df.copy()
 
@@ -70,6 +127,43 @@ def standardize_column_names(df: pd.DataFrame) -> pd.DataFrame:
             changes[0][0],
             changes[0][1],
         )
+
+    return df_clean
+
+
+def trim_whitespace(df: pd.DataFrame) -> pd.DataFrame:
+    """Trim leading and trailing whitespace from string columns."""
+    df_clean = df.copy()
+
+    # Get object/string columns
+    obj_cols = df_clean.select_dtypes(include=["object"]).columns
+
+    if len(obj_cols) == 0:
+        return df_clean
+
+    trimmed_cols = 0
+
+    for col in obj_cols:
+        try:
+            # Only trim if column contains strings
+            if df_clean[col].dtype == object:
+                # Store original for comparison
+                original = df_clean[col].copy()
+                # Trim whitespace, preserving NaN
+                df_clean[col] = df_clean[col].apply(
+                    lambda x: x.strip() if isinstance(x, str) else x
+                )
+
+                # Check if anything changed
+                changed = (original != df_clean[col]).sum()
+                if changed > 0:
+                    trimmed_cols += 1
+        except Exception as e:
+            logger.warning("Error trimming whitespace in column '%s': %s", col, e)
+            continue
+
+    if trimmed_cols > 0:
+        logger.info("Trimmed whitespace from %d string columns", trimmed_cols)
 
     return df_clean
 
@@ -247,6 +341,92 @@ def drop_duplicates(df: pd.DataFrame) -> pd.DataFrame:
     return df_clean
 
 
+def remove_id_columns(
+    df: pd.DataFrame, target: str, threshold: float = 0.95
+) -> pd.DataFrame:
+    """Remove columns that are likely ID columns based on uniqueness ratio."""
+    df_clean = df.copy()
+    id_cols_to_remove = []
+
+    for col in df.columns:
+        if col == target:
+            continue
+
+        # Check both numeric and categorical columns for ID-like behavior
+        nunique = df_clean[col].nunique()
+        total = len(df_clean)
+        uniqueness_ratio = nunique / total if total > 0 else 0
+
+        # Check if column is essentially unique (potential ID)
+        if uniqueness_ratio > threshold:
+            id_cols_to_remove.append(col)
+            logger.info(
+                "Removing ID column '%s' (%d unique / %d total = %.1f%%)",
+                col,
+                nunique,
+                total,
+                100 * uniqueness_ratio,
+            )
+
+    if id_cols_to_remove:
+        df_clean = df_clean.drop(columns=id_cols_to_remove)
+        logger.info(
+            "Removed %d ID columns with >%.0f%% unique values",
+            len(id_cols_to_remove),
+            100 * threshold,
+        )
+
+    return df_clean
+
+
+def validate_dataset_size(
+    df: pd.DataFrame, initial_shape: tuple, min_rows: int = 10, min_cols: int = 1
+) -> None:
+    current_rows, current_cols = df.shape
+    initial_rows, initial_cols = initial_shape
+
+    # Check absolute minimums
+    if current_rows < min_rows:
+        raise ValueError(
+            f"Dataset has only {current_rows} rows after cleaning (minimum: {min_rows}). "
+            f"This is insufficient for reliable model training. "
+            f"Consider relaxing cleaning parameters or lowering min_rows parameter."
+        )
+
+    if current_cols < min_cols:
+        raise ValueError(
+            f"Dataset has only {current_cols} feature columns after cleaning (minimum: {min_cols}). "
+            f"This is insufficient for reliable model training. "
+            f"Consider relaxing cleaning parameters or lowering min_cols parameter."
+        )
+
+    # Check for excessive data loss
+    row_loss_pct = (
+        100 * (initial_rows - current_rows) / initial_rows if initial_rows > 0 else 0
+    )
+    col_loss_pct = (
+        100 * (initial_cols - current_cols) / initial_cols if initial_cols > 0 else 0
+    )
+
+    if row_loss_pct > 50:
+        logger.warning(
+            "Lost %.1f%% of rows during cleaning (%d -> %d). "
+            "Consider relaxing cleaning parameters if this is excessive.",
+            row_loss_pct,
+            initial_rows,
+            current_rows,
+        )
+
+    if col_loss_pct > 50:
+        logger.warning(
+            "Lost %.1f%% of columns during cleaning (%d -> %d). "
+            "This may indicate overly aggressive feature removal.",
+            col_loss_pct,
+            initial_cols,
+            current_cols,
+        )
+
+
 def clean_data(df: pd.DataFrame, target: str, cfg: CleaningConfig) -> pd.DataFrame:
     """Clean data with pre-split operations."""
     _ensure_target_exists(df, target)
@@ -254,13 +434,26 @@ def clean_data(df: pd.DataFrame, target: str, cfg: CleaningConfig) -> pd.DataFra
     result_df = df.copy()
     initial_shape = result_df.shape
 
+    logger.info(
+        "Starting data cleaning: %d rows, %d columns",
+        initial_shape[0],
+        initial_shape[1],
+    )
+
     # 1. Standardize column names (avoid issues with special characters)
     result_df = standardize_column_names(result_df)
     # Update target name if it was changed
     target_lower = str(target).lower()
     target = re.sub(r"[^a-z0-9_]", "_", target_lower).strip("_")
 
-    # 2. Clean special null value representations
+    # 2. Handle mixed data types
+    result_df = handle_mixed_types(result_df, strategy=cfg.handle_mixed_types)
+
+    # 3. Trim whitespace from string columns
+    result_df = trim_whitespace(result_df)
+
+    # TODO: make this configurable
+    # 4. Clean special null value representations
     special_null_values = [
         "?",
         "N/A",
@@ -284,38 +477,50 @@ def clean_data(df: pd.DataFrame, target: str, cfg: CleaningConfig) -> pd.DataFra
     ]
     result_df = clean_special_null_values(result_df, special_null_values)
 
-    # 3. Drop duplicates
+    # 5. Drop duplicates
     if cfg.drop_duplicates:
         result_df = drop_duplicates(result_df)
 
-    # 4. Convert time-only columns
+    # 6. Convert time-only columns
     time_converter = TimeConverter()
     result_df = time_converter.fit_transform(result_df)
 
-    # 5. Convert datetime columns
+    # 7. Convert datetime columns
     datetime_converter = DateTimeConverter()
     result_df = datetime_converter.fit_transform(result_df)
 
-    # 6. Convert numeric-like strings to actual numbers
+    # 8. Convert numeric-like strings to actual numbers
     numeric_coercer = NumericLikeCoercer(threshold=0.95)
     result_df = numeric_coercer.fit_transform(result_df)
 
-    # 7. Handle inf values in numeric columns
+    # 9. Handle inf values in numeric columns
     result_df = handle_inf_values(result_df)
 
-    # 8. Remove rows with missing target
+    # 10. Remove rows with missing target
     if cfg.drop_missing_target:
         result_df = remove_missing_target(result_df, target)
 
-    # 9. Remove rows with too many missing features
+    # 11. Remove rows with too many missing features
     if cfg.max_missing_row_ratio is not None:
         result_df = remove_high_missing_rows(
             result_df, target, cfg.max_missing_row_ratio
         )
 
-    # 10. Remove constant/quasi-constant features
+    # 12. Remove constant/quasi-constant features
     if cfg.remove_constant_features:
         result_df = remove_constant_features(result_df, target, cfg.constant_tolerance)
+
+    # 13. Remove ID columns
+    if cfg.remove_id_columns:
+        result_df = remove_id_columns(result_df, target, cfg.id_column_threshold)
+
+    # 14. Validate dataset size after cleaning (raises error if insufficient)
+    validate_dataset_size(
+        result_df,
+        initial_shape,
+        min_rows=cfg.min_rows_after_cleaning,
+        min_cols=cfg.min_cols_after_cleaning,
+    )
 
     # Reset index to avoid potential issues
     result_df = result_df.reset_index(drop=True)

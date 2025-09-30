@@ -54,6 +54,31 @@ class CleaningConfig(BaseModel):
         description="Threshold for constant features. 1.0 = only 100% constant, 0.95 = 95%+ same value",
     )
 
+    remove_id_columns: bool = Field(
+        default=True,
+        description="Automatically remove columns with >95% unique values (likely IDs)",
+    )
+    id_column_threshold: float = Field(
+        default=0.95,
+        ge=0.5,
+        le=1.0,
+        description="Uniqueness ratio threshold for ID column detection",
+    )
+    handle_mixed_types: Literal["coerce", "drop"] = Field(
+        default="coerce",
+        description="How to handle mixed type columns: warn, coerce to string, or drop column",
+    )
+    min_rows_after_cleaning: int = Field(
+        default=1,
+        ge=1,
+        description="Minimum rows required after cleaning (raises error if below)",
+    )
+    min_cols_after_cleaning: int = Field(
+        default=1,
+        ge=1,
+        description="Minimum columns required after cleaning (raises error if below)",
+    )
+
     # Post-split cleaning (applied after split, fit on train)
     # Outlier detection (fit on train, apply to train only)
     outlier_strategy: Optional[Literal["iqr", "zscore", "none"]] = Field(
