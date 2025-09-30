@@ -58,10 +58,10 @@ def remove_high_missing_rows(
 
     if removed > 0:
         logger.info(
-            "Removed %d rows (%.2f%%) with >%.1% missing features",
+            "Removed %d rows (%.2f%%) with >%.1f%% missing features",
             removed,
             100 * removed / before,
-            max_missing_ratio,
+            100 * max_missing_ratio,
         )
 
     return df_clean
