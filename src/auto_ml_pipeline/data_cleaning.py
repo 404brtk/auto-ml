@@ -135,6 +135,8 @@ def handle_inf_values(df: pd.DataFrame) -> pd.DataFrame:
     return df_clean
 
 
+# TODO: when tolerance is low and all features are removed, it's being skipped
+# maybe leave some of featueres with the highest variance
 def remove_constant_features(
     df: pd.DataFrame, target: str, constant_tolerance: float = 1.0
 ) -> pd.DataFrame:
@@ -201,8 +203,17 @@ def remove_high_missing_rows(
 
     before = len(df)
 
-    # Count missing values per row, excluding target column
+    # Separate target from features
     X = df.drop(columns=[target])
+
+    # Handle edge case: no features
+    if X.shape[1] == 0:
+        logger.warning(
+            "No features found (only target column). Returning original DataFrame."
+        )
+        return df.copy()
+
+    # Count missing values per row, excluding target column
     missing_per_row = X.isnull().sum(axis=1)
     missing_ratios = missing_per_row / X.shape[1]
 
