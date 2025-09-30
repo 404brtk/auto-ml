@@ -72,7 +72,7 @@ requires-dist = [
     { name = "pyyaml", specifier = ">=6.0.2,<7.0.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.12.10" },
     { name = "scikit-learn", specifier = ">=1.7.1,<2.0.0" },
-    { name = "typer", specifier = ">=0.16.1,<0.17.0" },
+    { name = "typer", specifier = ">=0.16.1,<0.20.0" },
     { name = "xgboost", specifier = ">=3.0.4,<4.0.0" },
 ]
 provides-extras = ["dev"]
