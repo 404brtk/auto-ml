@@ -30,6 +30,25 @@ class SplitConfig(BaseModel):
     )
 
 
+class OutlierConfig(BaseModel):
+    """Configuration for outlier detection and handling."""
+
+    strategy: Optional[Literal["iqr", "zscore", "none"]] = Field(
+        default=None, description="Outlier detection strategy"
+    )
+    method: Literal["clip", "remove"] = Field(
+        default="clip", description="How to handle detected outliers"
+    )
+    iqr_multiplier: float = Field(
+        default=1.5,
+        gt=0,
+        description="IQR multiplier for outlier detection (1.5 = standard, 3.0 = conservative)",
+    )
+    zscore_threshold: float = Field(
+        default=3.0, gt=0, description="Z-score threshold for outlier detection"
+    )
+
+
 class CleaningConfig(BaseModel):
     """Configuration for data cleaning operations."""
 
@@ -79,22 +98,8 @@ class CleaningConfig(BaseModel):
         description="Minimum columns required after cleaning (raises error if below)",
     )
 
-    # Post-split cleaning (applied after split, fit on train)
-    # Outlier detection (fit on train, apply to train only)
-    outlier_strategy: Optional[Literal["iqr", "zscore", "none"]] = Field(
-        default=None, description="Outlier detection strategy"
-    )
-    outlier_method: Literal["clip", "remove"] = Field(
-        default="clip", description="How to handle detected outliers"
-    )
-    outlier_iqr_multiplier: float = Field(
-        default=1.5,
-        gt=0,
-        description="IQR multiplier for outlier detection (1.5 = standard, 3.0 = conservative)",
-    )
-    outlier_zscore_threshold: float = Field(
-        default=3.0, gt=0, description="Z-score threshold for outlier detection"
-    )
+    # Post-split cleaning (applied after split, fit on train, transform train only)
+    outlier: OutlierConfig = Field(default_factory=OutlierConfig)
 
 
 class ImputationConfig(BaseModel):

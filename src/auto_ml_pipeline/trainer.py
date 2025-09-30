@@ -261,13 +261,13 @@ def train(df: pd.DataFrame, target: str, cfg: PipelineConfig) -> TrainResult:
     logger.info("Train/test split: %s / %s", X_train.shape, X_test.shape)
 
     # Handle outliers
-    if cfg.cleaning.outlier_strategy not in [None, "none"]:
+    if cfg.cleaning.outlier.strategy not in [None, "none"]:
         try:
             outlier_transformer = OutlierTransformer(
-                strategy=cfg.cleaning.outlier_strategy,
-                method=cfg.cleaning.outlier_method,
-                iqr_multiplier=cfg.cleaning.outlier_iqr_multiplier,
-                zscore_threshold=cfg.cleaning.outlier_zscore_threshold,
+                strategy=cfg.cleaning.outlier.strategy,
+                method=cfg.cleaning.outlier.method,
+                iqr_multiplier=cfg.cleaning.outlier.iqr_multiplier,
+                zscore_threshold=cfg.cleaning.outlier.zscore_threshold,
             )
             # Fit and transform on X_train only (features)
             outlier_transformer.fit(X_train)
