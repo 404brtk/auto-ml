@@ -8,23 +8,10 @@ logger = get_logger(__name__)
 def infer_task(
     df: pd.DataFrame,
     target: str,
-    numeric_coercion_threshold: float = 0.95,
-    classification_cardinality_threshold: int = 20,
-    min_samples_for_inference: int = 10,
+    numeric_coercion_threshold: float = 0.9,
+    classification_cardinality_threshold: int = 30,
 ) -> TaskType:
-    """
-    Infer whether a ML task is classification or regression based on target variable.
-
-    Args:
-        df: DataFrame containing the target
-        target: Name of target column
-        numeric_coercion_threshold: Minimum ratio of values that must be numeric-coercible
-        classification_cardinality_threshold: Max unique values for classification
-        min_samples_for_inference: Minimum samples needed for reliable inference
-
-    Returns:
-        TaskType.classification or TaskType.regression
-    """
+    """Infer whether a ML task is classification or regression based on target variable."""
     if target not in df.columns:
         raise KeyError(f"Target column '{target}' not found in DataFrame")
 
@@ -43,9 +30,10 @@ def infer_task(
         )
         return TaskType.classification
 
-    if len(y_clean) < min_samples_for_inference:
+    # Warn if very few samples
+    if len(y_clean) < 10:
         logger.warning(
-            "Very few samples (%d), inference may be unreliable", len(y_clean)
+            "Very few samples (%d), task inference may be unreliable", len(y_clean)
         )
 
     # Single unique value -> classification (constant prediction)
@@ -82,7 +70,6 @@ def _infer_from_object_column(
     y_str = y.astype(str).str.strip()
 
     # Remove common thousand separators but preserve other punctuation
-    # This avoids misclassifying strings like "product_v1.2" as numeric
     y_cleaned = y_str.str.replace(",", "", regex=False)  # Remove commas
     y_cleaned = y_cleaned.str.replace(" ", "", regex=False)  # Remove spaces
 
@@ -90,24 +77,19 @@ def _infer_from_object_column(
     numeric_ratio = y_numeric.notna().mean() if len(y_numeric) > 0 else 0.0
 
     if numeric_ratio >= numeric_threshold:
-        # Mostly numeric-like strings - use consistent thresholds
+        # Mostly numeric-like strings - check cardinality and uniqueness ratio
         nunique_numeric = y_numeric.nunique(dropna=True)
-
-        # Use same dynamic threshold as feature_engineering.py
-        dynamic_threshold = min(100, len(y) * 0.1)
-        effective_threshold = max(cardinality_threshold, dynamic_threshold)
+        uniqueness_ratio = nunique_numeric / len(y) if len(y) > 0 else 1.0
 
         logger.info(
-            "Object column is %.1f%% numeric-coercible with %d unique values (threshold: %.1f)",
+            "Object column is %.1f%% numeric-coercible with %d unique values (%.1f%% of samples, threshold: %d)",
             100 * numeric_ratio,
             nunique_numeric,
-            effective_threshold,
+            100 * uniqueness_ratio,
+            cardinality_threshold,
         )
 
-        if (
-            nunique_numeric <= cardinality_threshold
-            and nunique_numeric <= dynamic_threshold
-        ):
+        if nunique_numeric <= cardinality_threshold and uniqueness_ratio < 0.5:
             return TaskType.classification
         else:
             return TaskType.regression
@@ -126,11 +108,6 @@ def _infer_from_numeric_column(y: pd.Series, cardinality_threshold: int) -> Task
     nunique = y.nunique(dropna=True)
     dtype_kind = y.dtype.kind
 
-    # Use same heuristic as feature_engineering.py for consistency
-    # Dynamic threshold based on sample size, with minimum of 100
-    dynamic_threshold = min(100, len(y) * 0.1)
-    effective_threshold = max(cardinality_threshold, dynamic_threshold)
-
     # Float types -> regression (continuous by nature)
     if dtype_kind in {"f"}:
         logger.info(
@@ -140,18 +117,24 @@ def _infer_from_numeric_column(y: pd.Series, cardinality_threshold: int) -> Task
         )
         return TaskType.regression
 
-    # Integer types: use dynamic threshold for better detection
+    # Integer types: check cardinality and uniqueness ratio
     if dtype_kind in {"i", "u"}:
-        if nunique <= cardinality_threshold and nunique <= dynamic_threshold:
+        uniqueness_ratio = nunique / len(y) if len(y) > 0 else 1.0
+
+        # Classification if: low cardinality AND not too many unique values relative to samples
+        if nunique <= cardinality_threshold and uniqueness_ratio < 0.5:
             logger.info(
-                "Integer target with %d unique values -> classification", nunique
+                "Integer target with %d unique values (%.1f%% of samples) -> classification",
+                nunique,
+                100 * uniqueness_ratio,
             )
             return TaskType.classification
         else:
             logger.info(
-                "Integer target with %d unique values (threshold: %.1f) -> regression",
+                "Integer target with %d unique values (%.1f%% of samples, threshold: %d) -> regression",
                 nunique,
-                effective_threshold,
+                100 * uniqueness_ratio,
+                cardinality_threshold,
             )
             return TaskType.regression
 

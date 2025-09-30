@@ -236,7 +236,12 @@ def train(df: pd.DataFrame, target: str, cfg: PipelineConfig) -> TrainResult:
 
     # Infer task if not specified
     if cfg.task is None:
-        cfg.task = infer_task(df, target)
+        cfg.task = infer_task(
+            df,
+            target,
+            numeric_coercion_threshold=cfg.cleaning.numeric_coercion_threshold,
+            classification_cardinality_threshold=cfg.cleaning.classification_cardinality_threshold,
+        )
 
     task = cfg.task
     logger.info("Task: %s", task.value)

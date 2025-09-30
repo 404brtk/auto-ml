@@ -87,6 +87,17 @@ class CleaningConfig(BaseModel):
         default="coerce",
         description="How to handle mixed type columns: warn, coerce to string, or drop column",
     )
+    numeric_coercion_threshold: float = Field(
+        default=0.9,
+        ge=0.0,
+        le=1.0,
+        description="Minimum ratio of values that must be numeric-coercible for object columns (0-1)",
+    )
+    classification_cardinality_threshold: int = Field(
+        default=30,
+        ge=2,
+        description="Max unique values to consider target as classification (used in task inference)",
+    )
     min_rows_after_cleaning: int = Field(
         default=1,
         ge=1,

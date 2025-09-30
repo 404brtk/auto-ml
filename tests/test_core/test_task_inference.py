@@ -91,8 +91,8 @@ class TestInferTaskEdgeCases:
     def test_few_samples_warning(self):
         """Test that few samples generates warning but still infers."""
         # Use float to avoid integer classification issues with small data
-        df = pd.DataFrame({"target": [0.0, 1.0, 0.0]})  # Only 3 samples, use float
-        task = infer_task(df, "target", min_samples_for_inference=10)
+        df = pd.DataFrame({"target": [0.0, 1.0, 0.0]})  # Only 3 samples (< 10)
+        task = infer_task(df, "target")
         # Float values -> regression
         assert task == TaskType.regression
 
@@ -150,16 +150,16 @@ class TestInferTaskCustomParameters:
 
     def test_custom_classification_threshold(self):
         """Test with custom cardinality threshold."""
-        # Use more samples to work with dynamic threshold
+        # 25 unique in 250 samples = 10% uniqueness
         df = pd.DataFrame({"target": list(range(25)) * 10})  # 250 samples, 25 unique
 
-        # With default threshold (20), should be regression
+        # With default threshold (30), should be classification (25 <= 30 and 10% < 50%)
         task_default = infer_task(df, "target")
-        assert task_default == TaskType.regression
+        assert task_default == TaskType.classification
 
-        # With higher threshold (30), should be classification
-        task_custom = infer_task(df, "target", classification_cardinality_threshold=30)
-        assert task_custom == TaskType.classification
+        # With lower threshold (20), should be regression (25 > 20)
+        task_custom = infer_task(df, "target", classification_cardinality_threshold=20)
+        assert task_custom == TaskType.regression
 
     def test_custom_numeric_coercion_threshold(self):
         """Test with custom numeric coercion threshold."""
@@ -176,18 +176,16 @@ class TestInferTaskCustomParameters:
         # After coercion, has low cardinality (7 unique) -> classification
         assert task_low == TaskType.classification
 
-    def test_dynamic_threshold_for_large_dataset(self):
-        """Test dynamic threshold adapts to dataset size."""
-        # Large dataset with moderate unique values
+    def test_large_dataset_with_moderate_cardinality(self):
+        """Test large dataset with moderate unique values."""
+        # 80 unique values in 1000 samples = 8% uniqueness
         n_samples = 1000
         n_unique = 80
         np.random.seed(42)
         df = pd.DataFrame({"target": np.random.choice(range(n_unique), size=n_samples)})
 
         task = infer_task(df, "target")
-        # Dynamic threshold = min(100, 1000 * 0.1) = 100
-        # 80 < 100 AND 80 < 20 (static threshold) -> depends on implementation
-        # Since 80 > 20, it should be regression
+        # 80 > 30 (default threshold) -> regression
         assert task == TaskType.regression
 
 
