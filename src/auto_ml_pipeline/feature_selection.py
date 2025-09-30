@@ -9,7 +9,7 @@ from sklearn.feature_selection import (
 from sklearn.pipeline import Pipeline
 from auto_ml_pipeline.config import FeatureSelectionConfig, TaskType
 from auto_ml_pipeline.logging_utils import get_logger
-from feature_engine.selection import DropCorrelatedFeatures, DropConstantFeatures
+from feature_engine.selection import DropCorrelatedFeatures
 
 logger = get_logger(__name__)
 
@@ -17,11 +17,6 @@ logger = get_logger(__name__)
 def build_selector(cfg: FeatureSelectionConfig, task: TaskType) -> Optional[Pipeline]:
     """Build feature selection pipeline based on configuration."""
     steps = []
-
-    # Constant feature removal
-    if cfg.remove_constant:
-        steps.append(("constant", DropConstantFeatures(tol=cfg.constant_tolerance)))
-
     # Variance threshold
     if cfg.variance_threshold is not None and cfg.variance_threshold >= 0:
         steps.append(("variance", VarianceThreshold(threshold=cfg.variance_threshold)))

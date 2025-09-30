@@ -44,6 +44,15 @@ class CleaningConfig(BaseModel):
         le=1,
         description="Max missing ratio per row before dropping (0-1)",
     )
+    remove_constant_features: bool = Field(
+        default=True, description="Remove constant/quasi-constant features (PRE-SPLIT)"
+    )
+    constant_tolerance: float = Field(
+        default=1.0,
+        ge=0.0,
+        le=1.0,
+        description="Threshold for constant features. 1.0 = only 100% constant, 0.95 = 95%+ same value",
+    )
 
     # Post-split cleaning (applied after split, fit on train)
     # Outlier detection (fit on train, apply to train only)
@@ -126,17 +135,6 @@ class FeatureEngineeringConfig(BaseModel):
 
 class FeatureSelectionConfig(BaseModel):
     """Configuration for feature selection methods."""
-
-    # Constant/quasi-constant features
-    remove_constant: bool = Field(
-        default=True, description="Remove constant/zero-variance features"
-    )
-    constant_tolerance: float = Field(
-        default=1.0,
-        ge=0.0,
-        le=1.0,
-        description="Threshold for constant/quasi-constant features. Drops features where most frequent value >= tol proportion. 1.0 = only constant (100% same).",
-    )
 
     # Variance-based selection
     variance_threshold: Optional[float] = Field(
