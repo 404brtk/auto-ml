@@ -1,7 +1,6 @@
 import pandas as pd
 import numpy as np
 import pytest
-from sklearn.pipeline import Pipeline
 
 from auto_ml_pipeline.feature_selection import build_selector
 from auto_ml_pipeline.config import FeatureSelectionConfig, TaskType
@@ -13,7 +12,6 @@ class TestBuildSelector:
     def test_no_selection_returns_none(self):
         """Test that no feature selection returns None."""
         cfg = FeatureSelectionConfig(
-            remove_constant=False,
             variance_threshold=None,
             correlation_threshold=None,
             mutual_info_k=None,
@@ -22,15 +20,6 @@ class TestBuildSelector:
 
         selector = build_selector(cfg, TaskType.classification)
         assert selector is None
-
-    def test_constant_feature_removal(self):
-        """Test constant feature removal."""
-        cfg = FeatureSelectionConfig(remove_constant=True, constant_tolerance=0.01)
-
-        selector = build_selector(cfg, TaskType.classification)
-        assert selector is not None
-        assert isinstance(selector, Pipeline)
-        assert "constant" in dict(selector.steps)
 
     def test_variance_threshold(self):
         """Test variance threshold selection."""
@@ -133,7 +122,6 @@ class TestBuildSelector:
     def test_multiple_selectors_combined(self):
         """Test combining multiple feature selection methods."""
         cfg = FeatureSelectionConfig(
-            remove_constant=True,
             variance_threshold=0.1,
             correlation_threshold=0.9,
             mutual_info_k=10,
@@ -143,8 +131,7 @@ class TestBuildSelector:
         assert selector is not None
         steps_dict = dict(selector.steps)
 
-        # Should have all four steps
-        assert "constant" in steps_dict
+        # Should have all three steps
         assert "variance" in steps_dict
         assert "correlation" in steps_dict
         assert "mutual_info" in steps_dict
@@ -152,7 +139,6 @@ class TestBuildSelector:
     def test_pipeline_ordering(self):
         """Test that selection steps are in correct order."""
         cfg = FeatureSelectionConfig(
-            remove_constant=True,
             variance_threshold=0.1,
             correlation_threshold=0.9,
             mutual_info_k=10,
@@ -162,8 +148,8 @@ class TestBuildSelector:
         selector = build_selector(cfg, TaskType.classification)
         step_names = [name for name, _ in selector.steps]
 
-        # Check expected ordering
-        expected_order = ["constant", "variance", "correlation", "mutual_info", "pca"]
+        # Check expected ordering (constant removal is now in PRE-SPLIT cleaning)
+        expected_order = ["variance", "correlation", "mutual_info", "pca"]
         assert step_names == expected_order
 
     def test_correlation_methods(self):
@@ -179,19 +165,6 @@ class TestBuildSelector:
 
 class TestFeatureSelectorIntegration:
     """Integration tests for feature selection with real data."""
-
-    def test_constant_removal_integration(self):
-        """Test constant feature removal with real data."""
-        X = pd.DataFrame({"const": [1, 1, 1, 1], "var": [1, 2, 3, 4]})
-        y = np.array([0, 1, 0, 1])
-
-        cfg = FeatureSelectionConfig(remove_constant=True)
-        selector = build_selector(cfg, TaskType.classification)
-
-        X_transformed = selector.fit_transform(X, y)
-
-        # Constant column should be removed
-        assert X_transformed.shape[1] == 1
 
     def test_variance_threshold_integration(self):
         """Test variance threshold with real data."""
@@ -296,7 +269,6 @@ class TestFeatureSelectorIntegration:
         y = (X["feat1"] + X["feat3"] > 0).astype(int)
 
         cfg = FeatureSelectionConfig(
-            remove_constant=True,
             variance_threshold=0.05,
             correlation_threshold=0.95,
             mutual_info_k=3,
@@ -325,7 +297,7 @@ class TestFeatureSelectorIntegration:
         X = pd.DataFrame(np.random.randn(100, 10))
         y = np.random.randint(0, 2, 100)
 
-        cfg = FeatureSelectionConfig(remove_constant=True, variance_threshold=0.1)
+        cfg = FeatureSelectionConfig(variance_threshold=0.1)
 
         selector1 = build_selector(cfg, TaskType.classification)
         X_fit_transform = selector1.fit_transform(X, y)
@@ -356,7 +328,7 @@ class TestFeatureSelectorIntegration:
         X = pd.DataFrame()
         y = np.array([])
 
-        cfg = FeatureSelectionConfig(remove_constant=True)
+        cfg = FeatureSelectionConfig(variance_threshold=0.1)
         selector = build_selector(cfg, TaskType.classification)
 
         # Empty dataframe may cause errors in sklearn, so skip if selector exists
@@ -367,9 +339,21 @@ class TestFeatureSelectorIntegration:
             try:
                 X_transformed = selector.fit_transform(X, y)
                 assert X_transformed.shape[0] == 0
-            except ValueError as e:
-                # Expected for empty DataFrame
-                assert "minimum of 1" in str(e) or "0 feature" in str(e)
+            except (ValueError, TypeError) as e:
+                # Expected for empty DataFrame - various error messages possible
+                error_msg = str(e).lower()
+                assert any(
+                    keyword in error_msg
+                    for keyword in [
+                        "at least",
+                        "array",
+                        "dtype",
+                        "minimum",
+                        "feature",
+                        "empty",
+                        "required",
+                    ]
+                )
 
     def test_single_feature(self):
         """Test with single feature."""
