@@ -1,17 +1,19 @@
 import random
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Union
 import difflib
 
 import numpy as np
 import pandas as pd
 import optuna
+from sklearn.base import clone
 from sklearn.model_selection import (
     StratifiedKFold,
     KFold,
     cross_val_score,
     train_test_split,
+    BaseCrossValidator,
 )
 from sklearn.pipeline import Pipeline as SkPipeline
 
@@ -141,11 +143,14 @@ def optimize_model(
     pipeline: SkPipeline,
     X_train: pd.DataFrame,
     y_train: pd.Series,
-    cv,
+    cv: Union[int, BaseCrossValidator],
     scorer_name: str,
     n_trials: int,
     timeout: Optional[int],
     random_state: int,
+    sampler_name: str = "tpe",
+    pruner_name: str = "median",
+    pruner_startup_trials: int = 5,
 ) -> tuple[float, Dict[str, Any]]:
     """Optimize model hyperparameters using Optuna."""
     search_space = model_search_space(model_name)
@@ -157,6 +162,9 @@ def optimize_model(
         )
         return float(np.mean(scores)), {}
 
+    # Clone pipeline to avoid mutation
+    pipeline_copy = clone(pipeline)
+
     def objective(trial: optuna.Trial) -> float:
         # Suggest hyperparameters
         params = {}
@@ -166,17 +174,52 @@ def optimize_model(
                 params[f"model__{param_name}"] = suggested_value
 
         # Set parameters and evaluate
-        pipeline.set_params(**params)
+        pipeline_copy.set_params(**params)
         scores = cross_val_score(
-            pipeline, X_train, y_train, cv=cv, scoring=scorer_name, n_jobs=-1
+            pipeline_copy, X_train, y_train, cv=cv, scoring=scorer_name, n_jobs=-1
         )
         return float(np.mean(scores))
+
+    # Suppress Optuna's verbose logging
+    optuna.logging.set_verbosity(optuna.logging.WARNING)
+
+    # Configure sampler
+    if sampler_name == "tpe":
+        sampler = optuna.samplers.TPESampler(seed=random_state)
+    elif sampler_name == "random":
+        sampler = optuna.samplers.RandomSampler(seed=random_state)
+    elif sampler_name == "cmaes":
+        # CMA-ES works best with continuous parameters
+        # warn_independent_sampling=False to handle mixed search spaces better
+        sampler = optuna.samplers.CmaEsSampler(
+            seed=random_state, warn_independent_sampling=False
+        )
+    else:
+        logger.warning("Unknown sampler %s, using TPE", sampler_name)
+        sampler = optuna.samplers.TPESampler(seed=random_state)
+
+    # Configure pruner
+    if pruner_name == "median":
+        pruner = optuna.pruners.MedianPruner(n_startup_trials=pruner_startup_trials)
+    elif pruner_name == "successive_halving":
+        pruner = optuna.pruners.SuccessiveHalvingPruner(
+            min_resource="auto", reduction_factor=4, min_early_stopping_rate=0
+        )
+    elif pruner_name == "hyperband":
+        pruner = optuna.pruners.HyperbandPruner(
+            min_resource=1, max_resource="auto", reduction_factor=3
+        )
+    elif pruner_name == "none":
+        pruner = optuna.pruners.NopPruner()
+    else:
+        logger.warning("Unknown pruner %s, using Median", pruner_name)
+        pruner = optuna.pruners.MedianPruner(n_startup_trials=pruner_startup_trials)
 
     # Create study and optimize
     study = optuna.create_study(
         direction="maximize",
-        sampler=optuna.samplers.TPESampler(seed=random_state),
-        pruner=optuna.pruners.MedianPruner(n_startup_trials=5),
+        sampler=sampler,
+        pruner=pruner,
     )
 
     try:
@@ -190,7 +233,7 @@ def optimize_model(
         }
         return float(study.best_value), best_params
 
-    except Exception as e:
+    except (optuna.exceptions.OptunaError, ValueError, RuntimeError) as e:
         logger.warning(
             "Optimization failed for %s: %s. Using default parameters.", model_name, e
         )
@@ -364,6 +407,9 @@ def train(df: pd.DataFrame, target: str, cfg: PipelineConfig) -> TrainResult:
                     cfg.optimization.n_trials,
                     cfg.optimization.timeout,
                     random_state,
+                    cfg.optimization.sampler,
+                    cfg.optimization.pruner,
+                    cfg.optimization.pruner_startup_trials,
                 )
             else:
                 # No optimization - just cross-validate

@@ -242,6 +242,20 @@ class OptimizationConfig(BaseModel):
         default=True,
         description="Retrain best model on full dataset (train + test) for production use",
     )
+    sampler: Literal["tpe", "random", "cmaes"] = Field(
+        default="tpe",
+        description="Optuna sampler algorithm: tpe (Tree-structured Parzen Estimator), random, or cmaes",
+    )
+    pruner: Literal["median", "successive_halving", "hyperband", "none"] = Field(
+        default="median",
+        description="Optuna pruner for early stopping: median, successive_halving, hyperband, or none",
+    )
+    pruner_startup_trials: int = Field(
+        default=5,
+        ge=0,
+        le=20,
+        description="Number of trials before pruning starts (for median pruner)",
+    )
 
 
 class EvalConfig(BaseModel):

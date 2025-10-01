@@ -76,6 +76,9 @@ optimization:
   n_trials: 50             # Number of optimization trials (1-1000)
   timeout: 3600            # Timeout in seconds (60+), null for no limit
   retrain_on_full_data: true  # Retrain best model on full dataset for production
+  sampler: "tpe"           # Sampler algorithm: "tpe" (default), "random", "cmaes"
+  pruner: "median"         # Pruner for early stopping: "median" (default), "successive_halving", "hyperband", "none"
+  pruner_startup_trials: 5 # Number of trials before pruning starts (0-20)
 
 # Model evaluation configuration
 eval:
