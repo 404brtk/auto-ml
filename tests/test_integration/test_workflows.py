@@ -27,7 +27,7 @@ class TestEndToEndClassification:
         )
 
         # Data cleaning
-        cleaning_cfg = CleaningConfig(drop_duplicates=True, drop_missing_target=True)
+        cleaning_cfg = CleaningConfig(drop_duplicates=True)
         df_clean = clean_data(df, "target", cleaning_cfg)
 
         # Feature engineering
@@ -234,7 +234,6 @@ class TestDataCleaningIntegration:
 
         cfg = CleaningConfig(
             drop_duplicates=True,
-            drop_missing_target=True,
             max_missing_row_ratio=0.3,
             remove_id_columns=False,  # Disable for test dataset
         )
@@ -416,9 +415,7 @@ class TestCompleteWorkflow:
         df = pd.concat([df, df.iloc[:5]], ignore_index=True)  # Add duplicates
 
         # Step 1: Clean
-        clean_cfg = CleaningConfig(
-            drop_duplicates=True, drop_missing_target=True, max_missing_row_ratio=0.5
-        )
+        clean_cfg = CleaningConfig(drop_duplicates=True, max_missing_row_ratio=0.5)
         df_clean = clean_data(df, "target", clean_cfg)
 
         # Step 2: Split features and target

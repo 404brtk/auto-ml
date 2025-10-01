@@ -15,7 +15,6 @@ split:
 # Data cleaning configuration
 cleaning:
   # Pre-split cleaning (applied before train/test split)
-  drop_missing_target: true       # Remove rows with missing target values
   drop_duplicates: true           # Remove duplicate rows
   max_missing_row_ratio: 0.5      # Max missing ratio per row before dropping (0-1)
   remove_constant_features: true  # Remove constant/quasi-constant features

@@ -497,8 +497,7 @@ def clean_data(df: pd.DataFrame, target: str, cfg: CleaningConfig) -> pd.DataFra
     result_df = handle_inf_values(result_df)
 
     # 10. Remove rows with missing target
-    if cfg.drop_missing_target:
-        result_df = remove_missing_target(result_df, target)
+    result_df = remove_missing_target(result_df, target)
 
     # 11. Remove rows with too many missing features
     if cfg.max_missing_row_ratio is not None:

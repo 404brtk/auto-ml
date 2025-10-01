@@ -53,9 +53,6 @@ class CleaningConfig(BaseModel):
     """Configuration for data cleaning operations."""
 
     # Pre-split cleaning (row-wise operations, no feature learning)
-    drop_missing_target: bool = Field(
-        default=True, description="Drop rows with missing target values"
-    )
     drop_duplicates: bool = Field(default=True, description="Remove duplicate rows")
     max_missing_row_ratio: Optional[float] = Field(
         default=0.5,

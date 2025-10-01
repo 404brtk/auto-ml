@@ -30,7 +30,6 @@ class TestCleanData:
 
         cfg = CleaningConfig(
             drop_duplicates=True,
-            drop_missing_target=True,
             max_missing_row_ratio=0.3,  # Remove rows with >30% missing
             remove_id_columns=False,
         )
@@ -52,14 +51,12 @@ class TestCleanData:
             {"feature1": [1, 2, 1], "feature2": [4, 5, 4], "target": [0, 1, np.nan]}
         )
 
-        cfg = CleaningConfig(
-            drop_duplicates=False, drop_missing_target=False, max_missing_row_ratio=None
-        )
+        cfg = CleaningConfig(drop_duplicates=False, max_missing_row_ratio=None)
 
         result = clean_data(df, "target", cfg)
-        # Should only apply transformers, not remove rows
-        assert len(result) == 3
-        assert result["target"].isna().iloc[2]  # NaN target should still be there
+        # Missing targets are always removed, even with minimal cleaning
+        assert len(result) == 2  # Row with NaN target removed
+        assert not result["target"].isna().any()  # No NaN targets
 
     def test_config_defaults(self):
         """Test with default config values."""
@@ -82,7 +79,6 @@ class TestCleanData:
 
         cfg = CleaningConfig(
             drop_duplicates=False,
-            drop_missing_target=False,
             max_missing_row_ratio=None,
             remove_id_columns=False,
         )
@@ -100,7 +96,6 @@ class TestCleanData:
 
         cfg = CleaningConfig(
             drop_duplicates=False,
-            drop_missing_target=False,
             max_missing_row_ratio=None,
             remove_id_columns=False,
         )
@@ -121,7 +116,6 @@ class TestCleanData:
 
         cfg = CleaningConfig(
             drop_duplicates=False,
-            drop_missing_target=False,
             max_missing_row_ratio=None,
             remove_id_columns=False,
         )
@@ -161,9 +155,7 @@ class TestCleanData:
             }
         )
 
-        cfg = CleaningConfig(
-            drop_duplicates=False, drop_missing_target=False, max_missing_row_ratio=None
-        )
+        cfg = CleaningConfig(drop_duplicates=False, max_missing_row_ratio=None)
         result = clean_data(df, "target", cfg)
 
         # Inf values should be replaced with NaN
@@ -182,7 +174,6 @@ class TestCleanData:
 
         cfg = CleaningConfig(
             drop_duplicates=False,
-            drop_missing_target=False,
             max_missing_row_ratio=None,
             remove_constant_features=True,
             constant_tolerance=1.0,
@@ -207,7 +198,6 @@ class TestCleanData:
 
         cfg = CleaningConfig(
             drop_duplicates=False,
-            drop_missing_target=False,
             max_missing_row_ratio=None,
             remove_constant_features=False,
             remove_id_columns=False,
@@ -245,7 +235,6 @@ class TestCleanData:
 
         cfg = CleaningConfig(
             drop_duplicates=True,
-            drop_missing_target=False,
             max_missing_row_ratio=None,
             remove_constant_features=True,
             constant_tolerance=1.0,
@@ -279,7 +268,6 @@ class TestCleanData:
         cfg = CleaningConfig(
             handle_mixed_types="coerce",
             drop_duplicates=False,
-            drop_missing_target=False,
             remove_id_columns=False,
         )
         result = clean_data(df, "target", cfg)
@@ -302,7 +290,6 @@ class TestCleanData:
         cfg = CleaningConfig(
             handle_mixed_types="drop",
             drop_duplicates=False,
-            drop_missing_target=False,
             remove_id_columns=False,
         )
         result = clean_data(df, "target", cfg)
@@ -322,7 +309,6 @@ class TestCleanData:
 
         cfg = CleaningConfig(
             drop_duplicates=False,
-            drop_missing_target=False,
             remove_id_columns=False,
         )
         result = clean_data(df, "target", cfg)
@@ -348,7 +334,6 @@ class TestCleanData:
             remove_id_columns=True,
             id_column_threshold=0.95,
             drop_duplicates=False,
-            drop_missing_target=False,
         )
         result = clean_data(df, "target", cfg)
 
@@ -371,7 +356,6 @@ class TestCleanData:
         cfg = CleaningConfig(
             remove_id_columns=False,
             drop_duplicates=False,
-            drop_missing_target=False,
         )
         result = clean_data(df, "target", cfg)
 
@@ -392,7 +376,6 @@ class TestCleanData:
         cfg = CleaningConfig(
             min_rows_after_cleaning=10,
             drop_duplicates=False,
-            drop_missing_target=False,
         )
 
         # Should not raise error
@@ -410,7 +393,6 @@ class TestCleanData:
 
         cfg = CleaningConfig(
             min_rows_after_cleaning=10,
-            drop_missing_target=True,
         )
 
         # Should raise ValueError
