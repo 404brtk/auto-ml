@@ -184,6 +184,7 @@ def optimize_model(
     optuna.logging.set_verbosity(optuna.logging.WARNING)
 
     # Configure sampler
+    sampler: optuna.samplers.BaseSampler
     if sampler_name == "tpe":
         sampler = optuna.samplers.TPESampler(seed=random_state)
     elif sampler_name == "random":
@@ -199,6 +200,7 @@ def optimize_model(
         sampler = optuna.samplers.TPESampler(seed=random_state)
 
     # Configure pruner
+    pruner: optuna.pruners.BasePruner
     if pruner_name == "median":
         pruner = optuna.pruners.MedianPruner(n_startup_trials=pruner_startup_trials)
     elif pruner_name == "successive_halving":
