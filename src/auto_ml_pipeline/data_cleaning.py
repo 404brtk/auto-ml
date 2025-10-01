@@ -490,7 +490,9 @@ def clean_data(df: pd.DataFrame, target: str, cfg: CleaningConfig) -> pd.DataFra
     result_df = datetime_converter.fit_transform(result_df)
 
     # 8. Convert numeric-like strings to actual numbers
-    numeric_coercer = NumericLikeCoercer(threshold=cfg.numeric_coercion_threshold)
+    numeric_coercer = NumericLikeCoercer(
+        threshold=cfg.numeric_coercion_threshold, target_col=target
+    )
     result_df = numeric_coercer.fit_transform(result_df)
 
     # 9. Handle inf values in numeric columns

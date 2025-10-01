@@ -15,6 +15,7 @@ class NumericLikeCoercer(BaseEstimator, TransformerMixin):
         threshold: float = 0.95,
         thousand_sep: Optional[str] = None,
         sample_size: int = 10000,
+        target_col: Optional[str] = None,
     ):
         if not (0 < threshold <= 1):
             raise ValueError(f"threshold must be in (0,1], got {threshold}")
@@ -22,6 +23,7 @@ class NumericLikeCoercer(BaseEstimator, TransformerMixin):
         self.threshold = float(threshold)
         self.thousand_sep = thousand_sep
         self.sample_size = max(1000, sample_size)  # Minimum sample size
+        self.target_col = target_col
         self.convert_cols_: List[str] = []
         self.conversion_stats_: Dict[str, Dict[str, Any]] = {}
 
@@ -151,6 +153,35 @@ class NumericLikeCoercer(BaseEstimator, TransformerMixin):
                         "format_info": format_info,
                         "sample_size": len(series),
                     }
+                    # Warn if conversion will create NaN values
+                    if conversion_rate < 1.0:
+                        failed_pct = 100 * (1 - conversion_rate)
+                        if self.target_col and col == self.target_col:
+                            logger.warning(
+                                "Target column '%s' will be converted to numeric, but %.1f%% of values "
+                                "will become NaN (non-numeric strings). These rows WILL BE DROPPED during cleaning. "
+                                "Consider pre-cleaning these values before training.",
+                                col,
+                                failed_pct,
+                            )
+                        else:
+                            logger.warning(
+                                "Column '%s' will be converted to numeric, but %.1f%% of values "
+                                "will become NaN (non-numeric strings).",
+                                col,
+                                failed_pct,
+                            )
+                elif conversion_rate > 0.3:  # Warn for ambiguous columns
+                    logger.warning(
+                        "Column '%s' is %.1f%% numeric-coercible (threshold: %.1f%%). "
+                        "This mixed-type column will NOT be converted and may affect task inference. "
+                        "Consider: (1) cleaning invalid values manually before training, "
+                        "or (2) lowering 'numeric_coercion_threshold' in config if %.1f%% is acceptable.",
+                        col,
+                        100 * conversion_rate,
+                        100 * self.threshold,
+                        100 * conversion_rate,
+                    )
 
             except Exception as e:
                 logger.warning(
