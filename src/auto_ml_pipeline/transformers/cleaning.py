@@ -197,7 +197,7 @@ class NumericLikeCoercer(BaseEstimator, TransformerMixin):
                 len(convert),
                 self.threshold,
                 ", ".join(convert[:10])
-                + (f" ... (+{len(convert)-10} more)" if len(convert) > 10 else ""),
+                + (f" ... (+{len(convert) - 10} more)" if len(convert) > 10 else ""),
             )
         else:
             logger.info("[Coercer] No numeric-like columns detected")

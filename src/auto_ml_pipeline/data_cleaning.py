@@ -62,7 +62,9 @@ def handle_mixed_types(df: pd.DataFrame, strategy: str = "coerce") -> pd.DataFra
         len(mixed_type_cols),
         ", ".join(mixed_type_cols[:5])
         + (
-            f" ... (+{len(mixed_type_cols)-5} more)" if len(mixed_type_cols) > 5 else ""
+            f" ... (+{len(mixed_type_cols) - 5} more)"
+            if len(mixed_type_cols) > 5
+            else ""
         ),
     )
 
@@ -234,7 +236,6 @@ def handle_inf_values(df: pd.DataFrame) -> pd.DataFrame:
 def remove_constant_features(
     df: pd.DataFrame, target: str, constant_tolerance: float = 1.0
 ) -> pd.DataFrame:
-
     # Separate target from features
     X = df.drop(columns=[target])
 
@@ -256,7 +257,7 @@ def remove_constant_features(
                 constant_tolerance,
                 ", ".join(removed_features[:5])
                 + (
-                    f" ... (+{len(removed_features)-5} more)"
+                    f" ... (+{len(removed_features) - 5} more)"
                     if len(removed_features) > 5
                     else ""
                 ),
