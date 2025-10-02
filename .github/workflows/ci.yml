@@ -36,9 +36,9 @@ jobs:
       run: |
         uv run mypy src/ tests/
 
-    - name: Check formatting with Black
+    - name: Check formatting with Ruff
       run: |
-        uv run black --check src/ tests/
+        uv run ruff format --check src/ tests/
 
     - name: Lint with Ruff
       run: |

@@ -2,15 +2,13 @@ repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.13.2
     hooks:
-      - id: ruff
+      # Run the linter
+      - id: ruff-check
         args: [--fix, --show-fixes]
         types_or: [python, pyi]
-
-  - repo: https://github.com/psf/black
-    rev: 25.9.0
-    hooks:
-      - id: black
-        language_version: python3.13
+      # Run the formatter
+      - id: ruff-format
+        types_or: [python, pyi]
 
   - repo: https://github.com/pre-commit/mirrors-mypy
     rev: v1.18.2
