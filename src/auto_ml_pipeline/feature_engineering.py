@@ -11,12 +11,13 @@ from sklearn.preprocessing import (
     StandardScaler,
     MinMaxScaler,
     RobustScaler,
+    TargetEncoder,
+    FunctionTransformer,
 )
-from sklearn.preprocessing import FunctionTransformer
 from sklearn.feature_extraction.text import TfidfVectorizer
-
 from auto_ml_pipeline.config import (
     FeatureEngineeringConfig,
+    TaskType,
 )
 from auto_ml_pipeline.transformers import (
     FrequencyEncoder,
@@ -144,7 +145,7 @@ def get_scaler(strategy: str = "standard") -> Union[BaseEstimator, str]:
 
 
 def build_preprocessor(
-    X: pd.DataFrame, cfg: FeatureEngineeringConfig
+    X: pd.DataFrame, cfg: FeatureEngineeringConfig, task: TaskType = TaskType.regression
 ) -> Tuple[ColumnTransformer, ColumnTypes]:
     """Build preprocessing pipeline based on inferred column types."""
 
@@ -188,9 +189,14 @@ def build_preprocessor(
     if col_types.categorical_high:
         steps = [("imputer", SimpleImputer(strategy="most_frequent"))]
 
-        # TEMP: Use FrequencyEncoder for all high-cardinality categorical features
-        # TODO: add more encoders like HashingEncoder, etc.
-        steps.append(("encoder", FrequencyEncoder()))
+        if cfg.encoding.high_cardinality_encoder == "frequency":
+            steps.append(("encoder", FrequencyEncoder()))
+        elif cfg.encoding.high_cardinality_encoder == "target":
+            # explicitly set target_type based on task to avoid auto-detection issues
+            target_type = "continuous" if task == TaskType.regression else "auto"
+            steps.append(
+                ("encoder", TargetEncoder(cv=5, smooth="auto", target_type=target_type))
+            )
 
         # Optional scaling for encoded features
         if cfg.encoding.scale_high_card:

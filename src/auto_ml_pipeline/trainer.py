@@ -120,8 +120,9 @@ def get_available_models(task: TaskType, random_state: int) -> Dict[str, Any]:
 
 def build_ml_pipeline(X: pd.DataFrame, cfg: PipelineConfig, model: Any) -> SkPipeline:
     """Build complete ML pipeline with all preprocessing steps."""
-    preprocessor, _ = build_preprocessor(X, cfg.features)
-    selector = build_selector(cfg.selection, cfg.task or TaskType.regression)
+    task = cfg.task or TaskType.regression
+    preprocessor, _ = build_preprocessor(X, cfg.features, task)
+    selector = build_selector(cfg.selection, task)
 
     steps = [
         # Main preprocessing (imputation, scaling, encoding)

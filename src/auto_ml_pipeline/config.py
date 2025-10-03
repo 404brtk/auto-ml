@@ -144,6 +144,9 @@ class EncodingConfig(BaseModel):
         le=1.0,
         description="Percentage of unique values to consider a feature as high cardinality",
     )
+    high_cardinality_encoder: Literal["target", "frequency"] = Field(
+        default="target", description="Encoder to use for high cardinality features"
+    )
     scale_high_card: bool = Field(
         default=False, description="Apply scaling to high cardinality encoded features"
     )
