@@ -66,7 +66,7 @@ class TestCategorizeColumnsBasic:
 
     def test_categorical_low_cardinality(self):
         """Test categorization of low-cardinality categorical columns."""
-        df = pd.DataFrame({"category": ["A", "B", "A", "B", "A"]})
+        df = pd.DataFrame({"category": ["A", "B", "A", "B", "A"] * 20})
         cfg = FeatureEngineeringConfig(encoding={"high_cardinality_threshold": 10})
         result = categorize_columns(df, cfg)
 

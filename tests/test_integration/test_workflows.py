@@ -46,10 +46,10 @@ class TestEndToEndClassification:
         """Test workflow with missing values in features."""
         df = pd.DataFrame(
             {
-                "feat1": [1, 2, np.nan, 4, 5],
-                "feat2": [10, np.nan, 30, 40, 50],
-                "category": ["A", "B", "A", np.nan, "C"],
-                "target": [0, 1, 0, 1, 0],
+                "feat1": [1, 2, np.nan, 4, 5] * 20,
+                "feat2": [10, np.nan, 30, 40, 50] * 20,
+                "category": ["A", "B", "A", np.nan, "C"] * 20,
+                "target": [0, 1, 0, 1, 0] * 20,
             }
         )
 
@@ -301,16 +301,17 @@ class TestFeatureEngineeringIntegration:
         """Test preprocessing with mixed feature types."""
         df = pd.DataFrame(
             {
-                "numeric": [1, 2, 3, 4, 5],
-                "categorical": ["A", "B", "A", "C", "B"],
-                "datetime": pd.date_range("2023-01-01", periods=5),
+                "numeric": [1, 2, 3, 4, 5] * 20,
+                "categorical": ["A", "B", "A", "C", "B"] * 20,
+                "datetime": pd.date_range("2023-01-01", periods=100),
                 "text": [
                     "This is a longer text sample that exceeds the minimum length threshold for text processing",
                     "Another longer text sample with sufficient words to be categorized as text feature for machine learning",
                     "Third text sample with many words to ensure proper text categorization and feature extraction",
                     "Fourth text sample designed to be long enough to trigger text processing in the pipeline",
                     "Final text sample with adequate length to meet the text length requirements for classification",
-                ],
+                ]
+                * 20,
             }
         )
 
@@ -339,6 +340,7 @@ class TestFeatureEngineeringIntegration:
         """Test encoding of high cardinality features."""
         # Create high cardinality feature
         df = pd.DataFrame({"high_card": [f"cat_{i}" for i in range(100)]})
+        y = np.random.randn(100)  # Add target for TargetEncoder
 
         from auto_ml_pipeline.config import EncodingConfig
 
@@ -351,7 +353,7 @@ class TestFeatureEngineeringIntegration:
         # Should be detected as high cardinality
         assert len(col_types.categorical_high) == 1
 
-        X_transformed = preprocessor.fit_transform(df)
+        X_transformed = preprocessor.fit_transform(df, y)
         assert X_transformed.shape[0] == 100
 
     def test_scaling_strategies(self):
