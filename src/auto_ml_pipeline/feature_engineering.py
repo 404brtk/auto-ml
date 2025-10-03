@@ -65,30 +65,46 @@ def categorize_columns(df: pd.DataFrame, cfg: FeatureEngineeringConfig) -> Colum
     time_cols = []
     text_cols = []
 
+    total_rows = len(df)
+
     for col in object_cols:
         if df[col].isna().all():
             continue
 
         nunique = df[col].nunique(dropna=True)
-        sample_size = min(500, len(df))
-        sample_values = df[col].dropna().head(sample_size).astype(str)
+        sample_size = min(500, total_rows)
 
-        if len(sample_values) == 0:
+        # Use random sampling
+        non_null_values = df[col].dropna()
+        if len(non_null_values) == 0:
             continue
+
+        actual_sample_size = min(sample_size, len(non_null_values))
+        sample_values = non_null_values.sample(
+            n=actual_sample_size, random_state=42
+        ).astype(str)
 
         avg_length = sample_values.str.len().mean()
         time_pattern_matches = sample_values.str.match(
             r"^\d{1,2}:\d{1,2}:\d{1,2}$"
         ).sum()
         time_pattern_pct = time_pattern_matches / len(sample_values)
-        # additional data-driven check for high-cardinality categorical features
-        is_short_and_unique = avg_length <= 20 and nunique > len(sample_values) * 0.8
+        sample_nunique = sample_values.nunique()
+        is_short_and_unique = (
+            avg_length <= 20 and sample_nunique > len(sample_values) * 0.8
+        )
+
+        cardinality_ratio = nunique / total_rows if total_rows > 0 else 0
+        is_high_cardinality = (
+            nunique >= cfg.encoding.high_cardinality_number_threshold
+            or cardinality_ratio >= cfg.encoding.high_cardinality_pct_threshold
+        )
 
         if time_pattern_pct >= 0.7:
             time_cols.append(col)
         elif avg_length > cfg.text_length_threshold:
             text_cols.append(col)
-        elif nunique > cfg.encoding.high_cardinality_threshold or is_short_and_unique:
+        elif is_high_cardinality or is_short_and_unique:
             categorical_high.append(col)
         else:
             categorical_low.append(col)

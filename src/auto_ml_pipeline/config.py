@@ -132,11 +132,17 @@ class ScalingConfig(BaseModel):
 class EncodingConfig(BaseModel):
     """Configuration for categorical encoding."""
 
-    high_cardinality_threshold: int = Field(
-        default=50,
+    high_cardinality_number_threshold: int = Field(
+        default=100,
         ge=2,
         le=1000,
-        description="Threshold for high cardinality categorical features",
+        description="Number of unique values to consider a feature as high cardinality",
+    )
+    high_cardinality_pct_threshold: float = Field(
+        default=0.1,
+        ge=0.0,
+        le=1.0,
+        description="Percentage of unique values to consider a feature as high cardinality",
     )
     scale_high_card: bool = Field(
         default=False, description="Apply scaling to high cardinality encoded features"
