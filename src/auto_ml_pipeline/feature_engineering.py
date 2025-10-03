@@ -6,6 +6,7 @@ from sklearn.base import BaseEstimator
 from sklearn.compose import ColumnTransformer
 from sklearn.impute import SimpleImputer, KNNImputer
 from sklearn.pipeline import Pipeline
+from feature_engine.imputation import RandomSampleImputer
 from sklearn.preprocessing import (
     OneHotEncoder,
     StandardScaler,
@@ -120,12 +121,21 @@ def categorize_columns(df: pd.DataFrame, cfg: FeatureEngineeringConfig) -> Colum
     )
 
 
-def get_imputer(strategy: str = "median", knn_neighbors: int = 5) -> BaseEstimator:
+def get_imputer(
+    strategy: str = "median",
+    knn_neighbors: int = 5,
+    random_sample_seed: Union[int, None] = 42,
+) -> BaseEstimator:
     """Get appropriate imputer based on strategy."""
     if strategy in ["mean", "median"]:
         return SimpleImputer(strategy=strategy)
     elif strategy == "knn":
         return KNNImputer(n_neighbors=knn_neighbors)
+    elif strategy == "random_sample":
+        return RandomSampleImputer(
+            random_state=random_sample_seed,
+            seed="general",
+        )
     else:
         return SimpleImputer(strategy="median")
 
@@ -168,7 +178,11 @@ def build_preprocessor(
             [
                 (
                     "imputer",
-                    get_imputer(cfg.imputation.strategy, cfg.imputation.knn_neighbors),
+                    get_imputer(
+                        cfg.imputation.strategy,
+                        cfg.imputation.knn_neighbors,
+                        cfg.imputation.random_sample_seed,
+                    ),
                 ),
                 ("scaler", get_scaler(cfg.scaling.strategy)),
             ]

@@ -502,6 +502,28 @@ class TestImputers:
         # Should impute with most frequent (A)
         assert not np.isnan(X_transformed).any()
 
+    def test_random_sample_imputation(self):
+        """Test random sample imputation."""
+        np.random.seed(42)
+        df = pd.DataFrame(
+            {
+                "numeric": [1, 2, np.nan, 4, 5, np.nan, 7, 8, 9, 10] * 10,
+            }
+        )
+        cfg = FeatureEngineeringConfig(
+            imputation={"strategy": "random_sample", "random_sample_seed": 42},
+            scaling={"strategy": "none"},  # Disable scaling
+        )
+
+        preprocessor, _ = build_preprocessor(df, cfg)
+        X_transformed = preprocessor.fit_transform(df)
+
+        # Should impute missing values
+        assert not np.isnan(X_transformed).any()
+        # Values should be from the original distribution
+        assert X_transformed.min() >= 1
+        assert X_transformed.max() <= 10
+
 
 class TestMixedPipeline:
     """Test pipeline with multiple component types."""
