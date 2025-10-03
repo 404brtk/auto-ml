@@ -453,30 +453,8 @@ def clean_data(df: pd.DataFrame, target: str, cfg: CleaningConfig) -> pd.DataFra
     # 3. Trim whitespace from string columns
     result_df = trim_whitespace(result_df)
 
-    # TODO: make this configurable
     # 4. Clean special null value representations
-    special_null_values = [
-        "?",
-        "N/A",
-        "n/a",
-        "NA",
-        "null",
-        "NULL",
-        "None",
-        "none",
-        "nan",
-        "NaN",
-        "NAN",
-        "undefined",
-        "missing",
-        "MISSING",
-        "-",
-        "--",
-        "---",
-        "",
-        " ",
-    ]
-    result_df = clean_special_null_values(result_df, special_null_values)
+    result_df = clean_special_null_values(result_df, cfg.special_null_values)
 
     # 5. Drop duplicates
     if cfg.drop_duplicates:

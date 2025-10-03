@@ -105,6 +105,30 @@ class CleaningConfig(BaseModel):
         ge=1,
         description="Minimum columns required after cleaning (raises error if below)",
     )
+    special_null_values: List[str] = Field(
+        default_factory=lambda: [
+            "?",
+            "N/A",
+            "n/a",
+            "NA",
+            "null",
+            "NULL",
+            "None",
+            "none",
+            "nan",
+            "NaN",
+            "NAN",
+            "undefined",
+            "missing",
+            "MISSING",
+            "-",
+            "--",
+            "---",
+            "",
+            " ",
+        ],
+        description="List of string values to treat as null/missing values",
+    )
 
     # Post-split cleaning (fit on train, transform both train+test for clip, train only for remove)
     outlier: OutlierConfig = Field(default_factory=OutlierConfig)
