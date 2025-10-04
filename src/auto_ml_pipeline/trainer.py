@@ -290,6 +290,7 @@ def train(df: pd.DataFrame, target: str, cfg: PipelineConfig) -> TrainResult:
             df,
             target,
             uniqueness_ratio_threshold=cfg.cleaning.uniqueness_ratio_threshold,
+            max_categories_absolute=cfg.cleaning.max_categories_absolute,
         )
 
     task = cfg.task

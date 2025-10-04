@@ -91,10 +91,25 @@ class CleaningConfig(BaseModel):
         description="Minimum ratio of values that must be numeric-coercible for object columns (0-1)",
     )
     uniqueness_ratio_threshold: float = Field(
-        default=0.5,
+        default=0.05,
         ge=0.0,
         le=1.0,
-        description="Threshold for uniqueness ratio in integer targets to classify as classification vs regression (0-1)",
+        description=(
+            "Uniqueness ratio threshold for integer targets with high cardinality. "
+            "If unique_values/sample_size < threshold, infer classification; "
+            "otherwise infer regression. Example: 0.05 means if <5% of values are unique, "
+            "treat as classification"
+        ),
+    )
+    max_categories_absolute: int = Field(
+        default=20,
+        ge=2,
+        description=(
+            "Maximum unique values for automatic classification inference. "
+            "Integer targets with <= this many unique values are automatically "
+            "treated as classification, regardless of dataset size. "
+            "Does not prevent classification tasks with higher cardinality"
+        ),
     )
     min_rows_after_cleaning: int = Field(
         default=1,
