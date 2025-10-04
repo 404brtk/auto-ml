@@ -14,7 +14,6 @@ split:
 
 # Data cleaning configuration
 cleaning:
-  # Pre-split cleaning (applied before train/test split)
   drop_duplicates: true           # Remove duplicate rows
   max_missing_row_ratio: 0.5      # Max missing ratio per row before dropping (0-1)
   remove_constant_features: true  # Remove constant/quasi-constant features
@@ -22,8 +21,30 @@ cleaning:
   remove_id_columns: true         # Remove columns with >95% unique values (likely IDs)
   id_column_threshold: 0.95       # Uniqueness ratio threshold for ID column detection
   handle_mixed_types: "coerce"    # How to handle mixed type columns: "coerce" or "drop"
+  numeric_coercion_threshold: 0.9 # Minimum ratio of values that must be numeric-coercible for object columns (0-1)
+  uniqueness_ratio_threshold: 0.5 # Threshold for uniqueness ratio in integer targets to classify as classification vs regression (0-1)
   min_rows_after_cleaning: 1      # Minimum rows required after cleaning (raises error if below)
   min_cols_after_cleaning: 1      # Minimum columns required after cleaning (raises error if below)
+  special_null_values:            # List of string values to treat as null/missing values
+    - "?"
+    - "N/A"
+    - "n/a"
+    - "NA"
+    - "null"
+    - "NULL"
+    - "None"
+    - "none"
+    - "nan"
+    - "NaN"
+    - "NAN"
+    - "undefined"
+    - "missing"
+    - "MISSING"
+    - "-"
+    - "--"
+    - "---"
+    - ""
+    - " "
 
   # Outlier detection (fitted on training data, applied to test if method=clip)
   outlier:
@@ -36,8 +57,10 @@ cleaning:
 features:
   # Missing value imputation
   imputation:
-    strategy: "median"    # "mean", "median", or "knn"
-    knn_neighbors: 5      # Number of neighbors for KNN imputation (1-20)
+    strategy_cat: "most_frequent" # "most_frequent" or "random_sample" for categorical features
+    strategy_num: "median"        # "mean", "median", "knn", or "random_sample" for numeric features
+    knn_neighbors: 5              # Number of neighbors for KNN imputation (1-20)
+    random_sample_seed: 42        # Random seed for random_sample imputation
 
   # Feature scaling
   scaling:
@@ -45,8 +68,10 @@ features:
 
   # Categorical encoding
   encoding:
-    high_cardinality_threshold: 50  # Threshold for high cardinality features (2-1000)
-    scale_high_card: false          # Apply scaling to high cardinality encoded features
+    high_cardinality_number_threshold: 100  # Number of unique values to consider a feature as high cardinality (2-1000)
+    high_cardinality_pct_threshold: 0.1     # Percentage of unique values to consider a feature as high cardinality (0-1)
+    high_cardinality_encoder: "target"      # Encoder to use for high cardinality features: "target" or "frequency"
+    scale_high_card: false                  # Apply scaling to high cardinality encoded features
 
   # Feature extraction
   extract_datetime: true   # Extract features from datetime columns
@@ -62,6 +87,7 @@ selection:
 
   # Correlation-based selection
   correlation_threshold: null  # Remove features with correlation above threshold (0-1)
+  correlation_method: "pearson" # Correlation method: "pearson", "spearman", or "kendall"
 
   # Univariate selection using mutual information
   mutual_info_k: null       # Select top K features using mutual information (1+)
@@ -75,8 +101,8 @@ optimization:
   n_trials: 50             # Number of optimization trials (1-1000)
   timeout: 3600            # Timeout in seconds (60+), null for no limit
   retrain_on_full_data: true  # Retrain best model on full dataset for production
-  sampler: "tpe"           # Sampler algorithm: "tpe" (default), "random", "cmaes"
-  pruner: "median"         # Pruner for early stopping: "median" (default), "successive_halving", "hyperband", "none"
+  sampler: "tpe"           # Sampler algorithm: "tpe" (Tree-structured Parzen Estimator), "random", or "cmaes"
+  pruner: "median"         # Pruner for early stopping: "median", "successive_halving", "hyperband", or "none"
   pruner_startup_trials: 5 # Number of trials before pruning starts (0-20)
 
 # Model evaluation configuration
