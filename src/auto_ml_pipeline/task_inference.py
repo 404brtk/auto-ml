@@ -68,7 +68,11 @@ def _infer_from_numeric_column(
 
     nunique = y.nunique(dropna=True)
     dtype_kind = y.dtype.kind
-    uniqueness_ratio = nunique / len(y) if len(y) > 0 else 1.0
+
+    # sample data
+    y_sample = y.sample(min(100, len(y)), random_state=42)
+    nunique = y_sample.nunique(dropna=True)
+    uniqueness_ratio = nunique / len(y_sample) if len(y_sample) > 0 else 1.0
 
     # Float types -> regression (continuous by nature)
     if dtype_kind in {"f"}:
