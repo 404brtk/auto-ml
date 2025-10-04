@@ -149,17 +149,17 @@ class NumericLikeCoercer(BaseEstimator, TransformerMixin):
         - Always uses float64
         """
         if not self.detect_integers:
-            return np.float64
+            return np.dtype(np.float64)
 
         # Check if all non-null values are integers
         non_null = numeric_series.dropna()
         if len(non_null) == 0:
-            return np.float64
+            return np.dtype(np.float64)
 
         # If NaN present, must use float64
         has_nulls = numeric_series.isna().any()
         if has_nulls:
-            return np.float64
+            return np.dtype(np.float64)
 
         # Check if all values are whole numbers
         if (non_null % 1 == 0).all():
@@ -169,12 +169,12 @@ class NumericLikeCoercer(BaseEstimator, TransformerMixin):
             # Only use int32 or int64 for sklearn compatibility
             # Avoid int8, int16, uint types which can cause issues
             if np.iinfo(np.int32).min <= min_val and max_val <= np.iinfo(np.int32).max:
-                return np.int32
+                return np.dtype(np.int32)
             else:
-                return np.int64
+                return np.dtype(np.int64)
 
         # Fallback - has decimals
-        return np.float64
+        return np.dtype(np.float64)
 
     def fit(self, X: Union[pd.DataFrame, np.ndarray], y=None):
         """Detect numeric-like columns and learn conversion parameters."""
