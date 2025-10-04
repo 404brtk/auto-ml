@@ -380,7 +380,7 @@ class TestFeatureEngineeringIntegration:
 
         for strategy in ["mean", "median"]:
             cfg = FeatureEngineeringConfig(
-                imputation=ImputationConfig(strategy=strategy)
+                imputation=ImputationConfig(strategy_num=strategy)
             )
 
             preprocessor, _ = build_preprocessor(df, cfg)

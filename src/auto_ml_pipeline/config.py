@@ -137,8 +137,13 @@ class CleaningConfig(BaseModel):
 class ImputationConfig(BaseModel):
     """Configuration for missing value imputation."""
 
-    strategy: Literal["mean", "median", "knn", "random_sample"] = Field(
-        default="median", description="Imputation strategy for missing values"
+    strategy_cat: Literal["most_frequent", "random_sample"] = Field(
+        default="most_frequent",
+        description="Imputation strategy for missing values in categorical features",
+    )
+    strategy_num: Literal["mean", "median", "knn", "random_sample"] = Field(
+        default="median",
+        description="Imputation strategy for missing values in numeric features",
     )
     knn_neighbors: int = Field(
         default=5, ge=1, le=20, description="Number of neighbors for KNN imputation"

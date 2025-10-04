@@ -121,12 +121,12 @@ def categorize_columns(df: pd.DataFrame, cfg: FeatureEngineeringConfig) -> Colum
     )
 
 
-def get_imputer(
+def get_numeric_imputer(
     strategy: str = "median",
     knn_neighbors: int = 5,
     random_sample_seed: Union[int, None] = 42,
 ) -> BaseEstimator:
-    """Get appropriate imputer based on strategy."""
+    """Get appropriate imputer for numeric features based on strategy."""
     if strategy in ["mean", "median"]:
         return SimpleImputer(strategy=strategy)
     elif strategy == "knn":
@@ -137,7 +137,29 @@ def get_imputer(
             seed="general",
         )
     else:
+        logger.warning(
+            f"Invalid numeric imputation strategy '{strategy}', falling back to 'median'"
+        )
         return SimpleImputer(strategy="median")
+
+
+def get_categorical_imputer(
+    strategy: str = "most_frequent",
+    random_sample_seed: Union[int, None] = 42,
+) -> BaseEstimator:
+    """Get appropriate imputer for categorical features based on strategy."""
+    if strategy == "most_frequent":
+        return SimpleImputer(strategy="most_frequent")
+    elif strategy == "random_sample":
+        return RandomSampleImputer(
+            random_state=random_sample_seed,
+            seed="general",
+        )
+    else:
+        logger.warning(
+            f"Invalid categorical imputation strategy '{strategy}', falling back to 'most_frequent'"
+        )
+        return SimpleImputer(strategy="most_frequent")
 
 
 def get_scaler(strategy: str = "standard") -> Union[BaseEstimator, str]:
@@ -178,10 +200,10 @@ def build_preprocessor(
             [
                 (
                     "imputer",
-                    get_imputer(
-                        cfg.imputation.strategy,
-                        cfg.imputation.knn_neighbors,
-                        cfg.imputation.random_sample_seed,
+                    get_numeric_imputer(
+                        strategy=cfg.imputation.strategy_num,
+                        knn_neighbors=cfg.imputation.knn_neighbors,
+                        random_sample_seed=cfg.imputation.random_sample_seed,
                     ),
                 ),
                 ("scaler", get_scaler(cfg.scaling.strategy)),
@@ -193,7 +215,13 @@ def build_preprocessor(
     if col_types.categorical_low:
         cat_low_pipeline = Pipeline(
             [
-                ("imputer", SimpleImputer(strategy="most_frequent")),
+                (
+                    "imputer",
+                    get_categorical_imputer(
+                        strategy=cfg.imputation.strategy_cat,
+                        random_sample_seed=cfg.imputation.random_sample_seed,
+                    ),
+                ),
                 ("onehot", OneHotEncoder(handle_unknown="ignore", sparse_output=False)),
             ]
         )
@@ -201,7 +229,15 @@ def build_preprocessor(
 
     # High cardinality categorical pipeline
     if col_types.categorical_high:
-        steps = [("imputer", SimpleImputer(strategy="most_frequent"))]
+        steps = [
+            (
+                "imputer",
+                get_categorical_imputer(
+                    strategy=cfg.imputation.strategy_cat,
+                    random_sample_seed=cfg.imputation.random_sample_seed,
+                ),
+            )
+        ]
 
         if cfg.encoding.high_cardinality_encoder == "frequency":
             steps.append(("encoder", FrequencyEncoder()))

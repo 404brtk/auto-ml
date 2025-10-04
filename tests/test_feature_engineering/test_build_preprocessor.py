@@ -5,7 +5,13 @@ import numpy as np
 from sklearn.compose import ColumnTransformer
 
 from auto_ml_pipeline.feature_engineering import build_preprocessor
-from auto_ml_pipeline.config import FeatureEngineeringConfig, EncodingConfig, TaskType
+from auto_ml_pipeline.config import (
+    FeatureEngineeringConfig,
+    EncodingConfig,
+    TaskType,
+    ImputationConfig,
+    ScalingConfig,
+)
 from sklearn.model_selection import train_test_split
 
 
@@ -157,7 +163,9 @@ class TestBuildPreprocessorAdvanced:
         """Test preprocessor with high cardinality categorical."""
         df = pd.DataFrame({"high_card": [f"cat_{i}" for i in range(100)]})
         y = np.random.randn(100)  # Add target for TargetEncoder
-        cfg = FeatureEngineeringConfig(encoding={"high_cardinality_threshold": 50})
+        cfg = FeatureEngineeringConfig(
+            encoding=EncodingConfig(high_cardinality_number_threshold=50)
+        )
         preprocessor, col_types = build_preprocessor(df, cfg)
 
         assert len(col_types.categorical_high) == 1
@@ -167,7 +175,7 @@ class TestBuildPreprocessorAdvanced:
     def test_no_scaling_option(self):
         """Test preprocessor without scaling."""
         df = pd.DataFrame({"numeric": [1, 100, 1000, 10000]})
-        cfg = FeatureEngineeringConfig(scaling={"strategy": "none"})
+        cfg = FeatureEngineeringConfig(scaling=ScalingConfig(strategy="none"))
         preprocessor, col_types = build_preprocessor(df, cfg)
 
         X_transformed = preprocessor.fit_transform(df)
@@ -179,7 +187,7 @@ class TestBuildPreprocessorAdvanced:
             {"feat1": [1, 2, np.nan, 4, 5], "feat2": [10, 20, 30, 40, 50]}
         )
         cfg = FeatureEngineeringConfig(
-            imputation={"strategy": "knn", "knn_neighbors": 3}
+            imputation=ImputationConfig(strategy_num="knn", knn_neighbors=3)
         )
         preprocessor, col_types = build_preprocessor(df, cfg)
 
@@ -388,7 +396,7 @@ class TestScalers:
     def test_standard_scaler(self):
         """Test StandardScaler."""
         df = pd.DataFrame({"numeric": [1, 100, 1000, 10000]})
-        cfg = FeatureEngineeringConfig(scaling={"strategy": "standard"})
+        cfg = FeatureEngineeringConfig(scaling=ScalingConfig(strategy="standard"))
 
         preprocessor, _ = build_preprocessor(df, cfg)
         X_transformed = preprocessor.fit_transform(df)
@@ -412,7 +420,7 @@ class TestScalers:
     def test_robust_scaler(self):
         """Test RobustScaler."""
         df = pd.DataFrame({"numeric": [1, 2, 3, 4, 100]})  # 100 is outlier
-        cfg = FeatureEngineeringConfig(scaling={"strategy": "robust"})
+        cfg = FeatureEngineeringConfig(scaling=ScalingConfig(strategy="robust"))
 
         preprocessor, _ = build_preprocessor(df, cfg)
         X_transformed = preprocessor.fit_transform(df)
@@ -424,7 +432,7 @@ class TestScalers:
     def test_no_scaling(self):
         """Test no scaling option."""
         df = pd.DataFrame({"numeric": [1, 100, 1000, 10000]})
-        cfg = FeatureEngineeringConfig(scaling={"strategy": "none"})
+        cfg = FeatureEngineeringConfig(scaling=ScalingConfig(strategy="none"))
 
         preprocessor, _ = build_preprocessor(df, cfg)
         X_transformed = preprocessor.fit_transform(df)
@@ -445,8 +453,10 @@ class TestImputers:
             }
         )
         cfg = FeatureEngineeringConfig(
-            imputation={"strategy": "median"},
-            scaling={"strategy": "none"},  # Disable scaling to check imputed value
+            imputation=ImputationConfig(strategy_num="median"),
+            scaling=ScalingConfig(
+                strategy="none"
+            ),  # Disable scaling to check imputed value
         )
 
         preprocessor, _ = build_preprocessor(df, cfg)
@@ -463,7 +473,7 @@ class TestImputers:
                 "numeric": [1, 2, np.nan, 4, 5],
             }
         )
-        cfg = FeatureEngineeringConfig(imputation={"strategy": "mean"})
+        cfg = FeatureEngineeringConfig(imputation=ImputationConfig(strategy_num="mean"))
 
         preprocessor, _ = build_preprocessor(df, cfg)
         X_transformed = preprocessor.fit_transform(df)
@@ -479,7 +489,7 @@ class TestImputers:
             }
         )
         cfg = FeatureEngineeringConfig(
-            imputation={"strategy": "knn", "knn_neighbors": 2}
+            imputation=ImputationConfig(strategy_num="knn", knn_neighbors=2)
         )
 
         preprocessor, _ = build_preprocessor(df, cfg)
@@ -495,24 +505,50 @@ class TestImputers:
             }
         )
 
-        cfg = FeatureEngineeringConfig()
+        cfg = FeatureEngineeringConfig(
+            imputation=ImputationConfig(strategy_cat="most_frequent")
+        )
         preprocessor, _ = build_preprocessor(df, cfg)
         X_transformed = preprocessor.fit_transform(df)
 
         # Should impute with most frequent (A)
         assert not np.isnan(X_transformed).any()
 
+    def test_categorical_random_sample_imputation(self):
+        """Test categorical imputation with random_sample."""
+        df = pd.DataFrame(
+            {
+                "category": ["A", "B", np.nan, "A", "A"] * 20,
+            }
+        )
+
+        cfg = FeatureEngineeringConfig(
+            imputation=ImputationConfig(
+                strategy_cat="random_sample", random_sample_seed=42
+            )
+        )
+        preprocessor, _ = build_preprocessor(df, cfg)
+        X_transformed = preprocessor.fit_transform(df)
+
+        # Should impute missing values
+        assert not np.isnan(X_transformed).any()
+        # Should have 2 columns (one-hot encoded A and B)
+        assert X_transformed.shape[1] == 2
+        # All values should be 0 or 1 (one-hot encoded)
+        assert set(X_transformed.flatten()).issubset({0.0, 1.0})
+
     def test_random_sample_imputation(self):
         """Test random sample imputation."""
-        np.random.seed(42)
         df = pd.DataFrame(
             {
                 "numeric": [1, 2, np.nan, 4, 5, np.nan, 7, 8, 9, 10] * 10,
             }
         )
         cfg = FeatureEngineeringConfig(
-            imputation={"strategy": "random_sample", "random_sample_seed": 42},
-            scaling={"strategy": "none"},  # Disable scaling
+            imputation=ImputationConfig(
+                strategy_num="random_sample", random_sample_seed=42
+            ),
+            scaling=ScalingConfig(strategy="none"),  # Disable scaling
         )
 
         preprocessor, _ = build_preprocessor(df, cfg)
@@ -541,8 +577,8 @@ class TestMixedPipeline:
         y = np.random.randn(100) * 100
 
         cfg = FeatureEngineeringConfig(
-            imputation={"strategy": "median"},
-            scaling={"strategy": "standard"},
+            imputation=ImputationConfig(strategy_num="median"),
+            scaling=ScalingConfig(strategy="standard"),
             encoding=EncodingConfig(
                 high_cardinality_encoder="target",
                 high_cardinality_number_threshold=10,
