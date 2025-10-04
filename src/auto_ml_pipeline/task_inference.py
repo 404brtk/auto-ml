@@ -8,7 +8,6 @@ logger = get_logger(__name__)
 def infer_task(
     df: pd.DataFrame,
     target: str,
-    numeric_coercion_threshold: float = 0.9,
     classification_cardinality_threshold: int = 30,
 ) -> TaskType:
     """Infer whether a ML task is classification or regression based on target variable."""
@@ -51,55 +50,15 @@ def infer_task(
         logger.info("Categorical target detected -> classification")
         return TaskType.classification
 
-    # Object dtype -> try numeric conversion
+    # Object dtypes
     if y.dtype.kind == "O":
-        return _infer_from_object_column(
-            y_clean, numeric_coercion_threshold, classification_cardinality_threshold
+        logger.info(
+            "Object target detected after cleaning - treating as classification"
         )
+        return TaskType.classification
 
     # Numeric dtypes -> decide based on cardinality and dtype
     return _infer_from_numeric_column(y_clean, classification_cardinality_threshold)
-
-
-def _infer_from_object_column(
-    y: pd.Series, numeric_threshold: float, cardinality_threshold: int
-) -> TaskType:
-    """Infer task type from object/string column."""
-
-    # Attempt numeric coercion with common formatting
-    y_str = y.astype(str).str.strip()
-
-    # Remove common thousand separators but preserve other punctuation
-    y_cleaned = y_str.str.replace(",", "", regex=False)  # Remove commas
-    y_cleaned = y_cleaned.str.replace(" ", "", regex=False)  # Remove spaces
-
-    y_numeric = pd.to_numeric(y_cleaned, errors="coerce")
-    numeric_ratio = y_numeric.notna().mean() if len(y_numeric) > 0 else 0.0
-
-    if numeric_ratio >= numeric_threshold:
-        # Mostly numeric-like strings - check cardinality and uniqueness ratio
-        nunique_numeric = y_numeric.nunique(dropna=True)
-        uniqueness_ratio = nunique_numeric / len(y) if len(y) > 0 else 1.0
-
-        logger.info(
-            "Object column is %.1f%% numeric-coercible with %d unique values (%.1f%% of samples, threshold: %d)",
-            100 * numeric_ratio,
-            nunique_numeric,
-            100 * uniqueness_ratio,
-            cardinality_threshold,
-        )
-
-        if nunique_numeric <= cardinality_threshold and uniqueness_ratio < 0.5:
-            return TaskType.classification
-        else:
-            return TaskType.regression
-    else:
-        # Mostly non-numeric strings -> classification
-        logger.info(
-            "Object column is %.1f%% numeric-coercible -> classification",
-            100 * numeric_ratio,
-        )
-        return TaskType.classification
 
 
 def _infer_from_numeric_column(y: pd.Series, cardinality_threshold: int) -> TaskType:
