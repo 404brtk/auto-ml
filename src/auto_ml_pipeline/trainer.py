@@ -289,7 +289,7 @@ def train(df: pd.DataFrame, target: str, cfg: PipelineConfig) -> TrainResult:
         cfg.task = infer_task(
             df,
             target,
-            classification_cardinality_threshold=cfg.cleaning.classification_cardinality_threshold,
+            uniqueness_ratio_threshold=cfg.cleaning.uniqueness_ratio_threshold,
         )
 
     task = cfg.task

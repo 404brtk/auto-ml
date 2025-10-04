@@ -8,7 +8,7 @@ logger = get_logger(__name__)
 def infer_task(
     df: pd.DataFrame,
     target: str,
-    classification_cardinality_threshold: int = 30,
+    uniqueness_ratio_threshold: float = 0.5,
 ) -> TaskType:
     """Infer whether a ML task is classification or regression based on target variable."""
     if target not in df.columns:
@@ -58,30 +58,32 @@ def infer_task(
         return TaskType.classification
 
     # Numeric dtypes -> decide based on cardinality and dtype
-    return _infer_from_numeric_column(y_clean, classification_cardinality_threshold)
+    return _infer_from_numeric_column(y_clean, uniqueness_ratio_threshold)
 
 
-def _infer_from_numeric_column(y: pd.Series, cardinality_threshold: int) -> TaskType:
+def _infer_from_numeric_column(
+    y: pd.Series, uniqueness_ratio_threshold: float
+) -> TaskType:
     """Infer task type from numeric column."""
 
     nunique = y.nunique(dropna=True)
     dtype_kind = y.dtype.kind
+    uniqueness_ratio = nunique / len(y) if len(y) > 0 else 1.0
 
     # Float types -> regression (continuous by nature)
     if dtype_kind in {"f"}:
         logger.info(
-            "Float target (dtype=%s) with %d unique values -> regression",
+            "Float target (dtype=%s) with %d unique values (%.1f%% of samples) -> regression",
             y.dtype,
             nunique,
+            100 * uniqueness_ratio,
         )
         return TaskType.regression
 
-    # Integer types: check cardinality and uniqueness ratio
+    # Integer types: check uniqueness ratio
     if dtype_kind in {"i", "u"}:
-        uniqueness_ratio = nunique / len(y) if len(y) > 0 else 1.0
-
-        # Classification if: low cardinality AND not too many unique values relative to samples
-        if nunique <= cardinality_threshold and uniqueness_ratio < 0.5:
+        # Classification if: not too many unique values relative to samples
+        if uniqueness_ratio < uniqueness_ratio_threshold:
             logger.info(
                 "Integer target with %d unique values (%.1f%% of samples) -> classification",
                 nunique,
@@ -90,10 +92,10 @@ def _infer_from_numeric_column(y: pd.Series, cardinality_threshold: int) -> Task
             return TaskType.classification
         else:
             logger.info(
-                "Integer target with %d unique values (%.1f%% of samples, threshold: %d) -> regression",
+                "Integer target with %d unique values (%.1f%% of samples, threshold: %.2f) -> regression",
                 nunique,
                 100 * uniqueness_ratio,
-                cardinality_threshold,
+                uniqueness_ratio_threshold,
             )
             return TaskType.regression
 

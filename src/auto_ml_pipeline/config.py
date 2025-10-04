@@ -90,10 +90,11 @@ class CleaningConfig(BaseModel):
         le=1.0,
         description="Minimum ratio of values that must be numeric-coercible for object columns (0-1)",
     )
-    classification_cardinality_threshold: int = Field(
-        default=30,
-        ge=2,
-        description="Max unique values to consider target as classification (used in task inference)",
+    uniqueness_ratio_threshold: float = Field(
+        default=0.5,
+        ge=0.0,
+        le=1.0,
+        description="Threshold for uniqueness ratio in integer targets to classify as classification vs regression (0-1)",
     )
     min_rows_after_cleaning: int = Field(
         default=1,
