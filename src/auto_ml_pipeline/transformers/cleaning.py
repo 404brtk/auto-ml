@@ -3,180 +3,276 @@ import pandas as pd
 from typing import List, Dict, Any, Optional, Union
 from auto_ml_pipeline.logging_utils import get_logger
 from sklearn.base import BaseEstimator, TransformerMixin
+import re
 
 logger = get_logger(__name__)
 
 
 class NumericLikeCoercer(BaseEstimator, TransformerMixin):
-    """Numeric coercion with number format detection."""
+    """Convert string columns to numeric with intelligent format detection."""
 
     def __init__(
         self,
         threshold: float = 0.95,
-        thousand_sep: Optional[str] = None,
         sample_size: int = 10000,
         target_col: Optional[str] = None,
+        detect_integers: bool = True,
     ):
         if not (0 < threshold <= 1):
             raise ValueError(f"threshold must be in (0,1], got {threshold}")
 
         self.threshold = float(threshold)
-        self.thousand_sep = thousand_sep
-        self.sample_size = max(1000, sample_size)  # Minimum sample size
+        self.sample_size = max(1000, sample_size)
         self.target_col = target_col
+        self.detect_integers = detect_integers
+
+        # Fitted attributes
         self.convert_cols_: List[str] = []
         self.conversion_stats_: Dict[str, Dict[str, Any]] = {}
+        self.detected_dtypes_: Dict[str, np.dtype] = {}
 
-    @staticmethod
-    def _detect_number_format(series: pd.Series) -> Dict[str, Any]:
-        """Detect number format with confidence scoring."""
-        sample = series.dropna().astype(str).str.strip()
+    def _clean_numeric_string(self, s: str) -> str:
+        """Remove common non-numeric characters but preserve potential number structure."""
+        if pd.isna(s) or not isinstance(s, str):
+            return ""
+
+        # Remove currency symbols, whitespace, and common formatting
+        s = s.strip()
+        s = re.sub(r"[\$€£¥₹\s\'_]", "", s)  # Remove currency and whitespace
+        return s
+
+    def _detect_format(self, series: pd.Series) -> Dict[str, Any]:
+        """Detect number format."""
+        sample = series.dropna().astype(str).apply(self._clean_numeric_string)
+        sample = sample[sample.str.len() > 0]
+
         if len(sample) == 0:
-            return {"confidence": 0.0, "format": "unknown"}
+            return {"decimal_sep": ".", "thousands_sep": None, "confidence": 0.0}
 
-        # Count format patterns
-        patterns = {
-            "comma_decimal": 0,  # 1.234,56
-            "dot_decimal": 0,  # 1,234.56
-            "simple": 0,  # 1234.56 or 1234
-            "scientific": 0,  # 1.23e10
-        }
+        # Take a reasonable sample for analysis
+        sample = sample.head(min(1000, len(sample)))
 
-        for val in sample.head(min(1000, len(sample))):
-            val = val.replace(" ", "").replace("'", "")
-            if not val or val in ["nan", "null", "none"]:
+        # Count patterns based on separator positions and structure
+        us_votes = 0  # Evidence for US format (comma thousands, dot decimal)
+        eu_votes = 0  # Evidence for EU format (dot thousands, comma decimal)
+
+        for val in sample:
+            # Skip if no separators
+            if "," not in val and "." not in val:
                 continue
 
-            # Scientific notation
-            if "e" in val.lower():
-                patterns["scientific"] += 1
-            # Contains both comma and dot
-            elif "," in val and "." in val:
-                last_comma = val.rfind(",")
-                last_dot = val.rfind(".")
-                if last_comma > last_dot:
-                    patterns["comma_decimal"] += 1
+            # Both separators present - strongest signal
+            if "," in val and "." in val:
+                comma_pos = val.rfind(",")
+                dot_pos = val.rfind(".")
+
+                if dot_pos > comma_pos:
+                    # Dot is last: 1,234.56 (US format)
+                    us_votes += 2  # Strong signal
                 else:
-                    patterns["dot_decimal"] += 1
-            # Only comma
+                    # Comma is last: 1.234,56 (EU format)
+                    eu_votes += 2  # Strong signal
+
+            # Only comma present
             elif "," in val:
-                # Heuristic: if 1-2 digits after last comma, likely decimal
-                after_comma = len(val) - val.rfind(",") - 1
-                if val.count(",") == 1 and 1 <= after_comma <= 2:
-                    patterns["comma_decimal"] += 1
-                else:
-                    patterns["dot_decimal"] += 1  # Grouping comma
-            # Only dot or no separators
-            else:
-                patterns["simple"] += 1
+                parts = val.split(",")
+                last_part_len = len(parts[-1])
 
-        total = sum(patterns.values())
-        if total == 0:
-            return {"confidence": 0.0, "format": "unknown"}
+                # Comma with exactly 2 digits after: likely EU decimal (12,34)
+                if last_part_len == 2 and parts[-1].isdigit():
+                    eu_votes += 1
+                # Comma with exactly 3 digits after: likely US thousands (1,234)
+                elif last_part_len == 3 and parts[-1].isdigit():
+                    us_votes += 1
+                # Multiple commas every 3 digits: likely US thousands (1,234,567)
+                elif len(parts) > 2 and all(len(p) == 3 for p in parts[1:]):
+                    us_votes += 1
 
-        best_format = max(patterns.items(), key=lambda x: x[1])
-        confidence = best_format[1] / total
+            # Only dot present
+            elif "." in val:
+                parts = val.split(".")
+                last_part_len = len(parts[-1])
 
-        return {
-            "confidence": confidence,
-            "format": best_format[0],
-            "patterns": patterns,
-        }
+                # Dot with exactly 2 digits after: likely US decimal (12.34)
+                if last_part_len == 2 and parts[-1].isdigit():
+                    us_votes += 1
+                # Dot with exactly 3 digits after: likely EU thousands (1.234)
+                elif last_part_len == 3 and parts[-1].isdigit():
+                    eu_votes += 1
+                # Multiple dots every 3 digits: likely EU thousands (1.234.567)
+                elif len(parts) > 2 and all(len(p) == 3 for p in parts[1:]):
+                    eu_votes += 1
 
-    def _normalize_number_string(self, s: str, format_info: Dict[str, Any]) -> str:
-        """Normalize number string based on detected format."""
-        s = s.strip().replace(" ", "").replace("'", "")
+        total_votes = us_votes + eu_votes
+
+        if total_votes == 0:
+            # No clear pattern, assume US format (default)
+            return {"decimal_sep": ".", "thousands_sep": None, "confidence": 0.5}
+
+        # Determine format
+        if us_votes >= eu_votes:
+            confidence = us_votes / total_votes
+            return {"decimal_sep": ".", "thousands_sep": ",", "confidence": confidence}
+        else:
+            confidence = eu_votes / total_votes
+            return {"decimal_sep": ",", "thousands_sep": ".", "confidence": confidence}
+
+    def _normalize_to_numeric_string(
+        self, s: str, decimal_sep: str, thousands_sep: Optional[str]
+    ) -> str:
+        """Convert to standard numeric format (dot as decimal, no thousands separator)."""
+        if not isinstance(s, str) or not s:
+            return ""
+
+        s = self._clean_numeric_string(s)
         if not s:
-            return s
+            return ""
 
-        format_type = format_info.get("format", "simple")
+        # Remove thousands separator
+        if thousands_sep:
+            s = s.replace(thousands_sep, "")
 
-        try:
-            if format_type == "scientific":
-                return s  # Keep as-is for scientific notation
-            elif format_type == "comma_decimal":
-                # European: 1.234,56 -> 1234.56
-                s = s.replace(".", "")  # Remove grouping dots
-                s = s.replace(",", ".")  # Convert decimal comma to dot
-            elif format_type == "dot_decimal":
-                # US: 1,234.56 -> 1234.56
-                s = s.replace(",", "")  # Remove grouping commas
-            # For "simple", no changes needed
+        # Convert decimal separator to dot
+        if decimal_sep == ",":
+            s = s.replace(",", ".")
 
-            return s
-        except Exception:
-            return s
+        return s
+
+    def _determine_dtype(self, numeric_series: pd.Series) -> np.dtype:
+        """Determine optimal numeric dtype for sklearn compatibility.
+
+        When detect_integers=True:
+        - Converts to int32 or int64 only (with int8/int16 or unsigned types it gets problematic and e.g. TargetEncoder fails)
+        - Uses float64 if NaN values present or if decimals present
+
+        When detect_integers=False:
+        - Always uses float64
+        """
+        if not self.detect_integers:
+            return np.float64
+
+        # Check if all non-null values are integers
+        non_null = numeric_series.dropna()
+        if len(non_null) == 0:
+            return np.float64
+
+        # If NaN present, must use float64
+        has_nulls = numeric_series.isna().any()
+        if has_nulls:
+            return np.float64
+
+        # Check if all values are whole numbers
+        if (non_null % 1 == 0).all():
+            # Determine integer size needed
+            min_val, max_val = non_null.min(), non_null.max()
+
+            # Only use int32 or int64 for sklearn compatibility
+            # Avoid int8, int16, uint types which can cause issues
+            if np.iinfo(np.int32).min <= min_val and max_val <= np.iinfo(np.int32).max:
+                return np.int32
+            else:
+                return np.int64
+
+        # Fallback - has decimals
+        return np.float64
 
     def fit(self, X: Union[pd.DataFrame, np.ndarray], y=None):
+        """Detect numeric-like columns and learn conversion parameters."""
         if not isinstance(X, pd.DataFrame):
             self.convert_cols_ = []
             self.conversion_stats_ = {}
-            logger.warning("NumericLikeCoercer received non-DataFrame; skipping")
+            self.detected_dtypes_ = {}
+            logger.warning("NumericLikeCoercer requires DataFrame input; skipping")
             return self
 
-        obj_cols = X.select_dtypes(include=["object", "category"]).columns
-        convert: List[str] = []
+        # Only consider object and category columns
+        candidate_cols = X.select_dtypes(
+            include=["object", "category"]
+        ).columns.tolist()
 
-        for col in obj_cols:
+        if not candidate_cols:
+            logger.info("[Coercer] No object/category columns to analyze")
+            self.convert_cols_ = []
+            self.conversion_stats_ = {}
+            self.detected_dtypes_ = {}
+            return self
+
+        convert_cols = []
+
+        for col in candidate_cols:
             try:
-                # Sample large columns for efficiency
                 series = X[col]
+
+                # Sample for efficiency
                 if len(series) > self.sample_size:
-                    series = series.sample(n=self.sample_size, random_state=42)
-
-                # Detect number format
-                format_info = self._detect_number_format(series)
-
-                if self.thousand_sep:
-                    # Legacy path with explicit separator
-                    cleaned = (
-                        series.astype(str).str.replace(" ", "").str.replace("'", "")
-                    )
-                    cleaned = cleaned.str.replace(self.thousand_sep, "")
+                    series_sample = series.sample(n=self.sample_size, random_state=42)
                 else:
-                    # Use format detection
-                    cleaned = series.astype(str).apply(
-                        lambda x: self._normalize_number_string(x, format_info)
-                    )
+                    series_sample = series
 
-                # Test conversion
-                numeric = pd.to_numeric(cleaned, errors="coerce")
-                if len(numeric) == 0:
+                # Skip if all null
+                if series_sample.isna().all():
                     continue
 
-                conversion_rate = float(numeric.notna().mean())
+                # Detect format
+                format_info = self._detect_format(series_sample)
+
+                # Attempt conversion on sample
+                cleaned = series_sample.astype(str).apply(
+                    lambda x: self._normalize_to_numeric_string(
+                        x, format_info["decimal_sep"], format_info["thousands_sep"]
+                    )
+                )
+
+                # Convert to numeric
+                numeric = pd.to_numeric(cleaned, errors="coerce")
+
+                # Calculate conversion rate (excluding original NaN values)
+                original_valid = series_sample.notna()
+                successfully_converted = numeric.notna() & original_valid
+                conversion_rate = (
+                    successfully_converted.sum() / original_valid.sum()
+                    if original_valid.sum() > 0
+                    else 0.0
+                )
 
                 if conversion_rate >= self.threshold:
-                    convert.append(col)
+                    # Determine optimal dtype
+                    optimal_dtype = self._determine_dtype(numeric)
+
+                    convert_cols.append(col)
                     self.conversion_stats_[col] = {
-                        "conversion_rate": conversion_rate,
+                        "conversion_rate": float(conversion_rate),
                         "format_info": format_info,
-                        "sample_size": len(series),
+                        "sample_size": len(series_sample),
+                        "original_nulls": series_sample.isna().sum(),
                     }
-                    # Warn if conversion will create NaN values
+                    self.detected_dtypes_[col] = optimal_dtype
+
+                    # Warnings for imperfect conversion
                     if conversion_rate < 1.0:
                         failed_pct = 100 * (1 - conversion_rate)
                         if self.target_col and col == self.target_col:
                             logger.warning(
-                                "Target column '%s' will be converted to numeric, but %.1f%% of values "
-                                "will become NaN (non-numeric strings). These rows WILL BE DROPPED during cleaning. "
-                                "Consider pre-cleaning these values before training.",
+                                "Target column '%s' will be converted to numeric, but %.1f%% of non-null values "
+                                "cannot be parsed and will become NaN. These rows will be dropped during cleaning. "
+                                "Review and clean these values before training.",
                                 col,
                                 failed_pct,
                             )
                         else:
-                            logger.warning(
-                                "Column '%s' will be converted to numeric, but %.1f%% of values "
-                                "will become NaN (non-numeric strings).",
+                            logger.info(
+                                "Column '%s' will be converted to numeric with %.1f%% conversion rate (%.1f%% unparseable)",
                                 col,
+                                100 * conversion_rate,
                                 failed_pct,
                             )
-                elif conversion_rate > 0.3:  # Warn for ambiguous columns
+
+                elif conversion_rate > 0.3:
+                    # Warn about ambiguous columns
                     logger.warning(
-                        "Column '%s' is %.1f%% numeric-coercible (threshold: %.1f%%). "
-                        "This mixed-type column will NOT be converted and may affect task inference. "
-                        "Consider: (1) cleaning invalid values manually before training, "
-                        "or (2) lowering 'numeric_coercion_threshold' in config if %.1f%% is acceptable.",
+                        "Column '%s' is %.1f%% numeric-convertible but below threshold (%.1f%%). "
+                        "This mixed-type column may affect downstream processing. "
+                        "Consider: (1) manually cleaning invalid values, or (2) adjusting threshold to %.1f%%",
                         col,
                         100 * conversion_rate,
                         100 * self.threshold,
@@ -185,28 +281,34 @@ class NumericLikeCoercer(BaseEstimator, TransformerMixin):
 
             except Exception as e:
                 logger.warning(
-                    "Error analyzing column %s for numeric conversion: %s", col, e
+                    "Error analyzing column '%s' for numeric conversion: %s",
+                    col,
+                    str(e),
                 )
                 continue
 
-        self.convert_cols_ = convert
+        self.convert_cols_ = convert_cols
 
-        if convert:
+        if convert_cols:
             logger.info(
-                "[Coercer] Converting %d columns to numeric (threshold=%.2f): %s",
-                len(convert),
-                self.threshold,
-                ", ".join(convert[:10])
-                + (f" ... (+{len(convert) - 10} more)" if len(convert) > 10 else ""),
+                "[Coercer] Will convert %d column(s) to numeric: %s",
+                len(convert_cols),
+                ", ".join(convert_cols[:5])
+                + (
+                    f" ... (+{len(convert_cols) - 5} more)"
+                    if len(convert_cols) > 5
+                    else ""
+                ),
             )
         else:
-            logger.info("[Coercer] No numeric-like columns detected")
+            logger.info("[Coercer] No columns meet numeric conversion threshold")
 
         return self
 
     def transform(
         self, X: Union[pd.DataFrame, np.ndarray]
     ) -> Union[pd.DataFrame, np.ndarray]:
+        """Apply numeric conversion to identified columns."""
         if not isinstance(X, pd.DataFrame) or not self.convert_cols_:
             return X
 
@@ -214,27 +316,41 @@ class NumericLikeCoercer(BaseEstimator, TransformerMixin):
 
         for col in self.convert_cols_:
             if col not in X_out.columns:
+                logger.warning("Column '%s' not found in transform data; skipping", col)
                 continue
 
             try:
-                format_info = self.conversion_stats_.get(col, {}).get("format_info", {})
+                stats = self.conversion_stats_[col]
+                format_info = stats["format_info"]
 
-                if self.thousand_sep:
-                    cleaned = (
-                        X_out[col].astype(str).str.replace(" ", "").str.replace("'", "")
+                # Normalize numeric strings
+                cleaned = (
+                    X_out[col]
+                    .astype(str)
+                    .apply(
+                        lambda x: self._normalize_to_numeric_string(
+                            x, format_info["decimal_sep"], format_info["thousands_sep"]
+                        )
                     )
-                    cleaned = cleaned.str.replace(self.thousand_sep, "")
-                else:
-                    cleaned = (
-                        X_out[col]
-                        .astype(str)
-                        .apply(lambda x: self._normalize_number_string(x, format_info))
-                    )
+                )
 
-                X_out[col] = pd.to_numeric(cleaned, errors="coerce")
+                # Convert to numeric
+                numeric = pd.to_numeric(cleaned, errors="coerce")
+
+                # Cast to optimal dtype (handles nullable integers correctly)
+                target_dtype = self.detected_dtypes_.get(col, np.float64)
+                X_out[col] = numeric.astype(target_dtype)
 
             except Exception as e:
-                logger.warning("Error converting column %s: %s", col, e)
+                logger.error(
+                    "Error converting column '%s': %s. Keeping original.", col, str(e)
+                )
                 continue
 
         return X_out
+
+    def get_feature_names_out(self, input_features=None):
+        """Get output feature names for sklearn compatibility."""
+        if input_features is None:
+            return np.array([])
+        return np.asarray(input_features, dtype=object)
