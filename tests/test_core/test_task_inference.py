@@ -13,14 +13,14 @@ class TestInferTaskBasic:
 
     def test_binary_classification(self):
         """Test inference of binary classification."""
-        # Use larger dataset so dynamic threshold works properly
+        # 2 classes in 100 samples = 2/100 = 0.02 < 0.5 threshold -> classification
         df = pd.DataFrame({"target": [0, 1] * 50})  # 100 samples, 2 classes
         task = infer_task(df, "target")
         assert task == TaskType.classification
 
     def test_multiclass_classification(self):
         """Test inference of multiclass classification."""
-        # Use larger dataset so dynamic threshold works properly
+        # 3 classes in 120 samples = 3/120 = 0.025 < 0.5 threshold -> classification
         df = pd.DataFrame({"target": [0, 1, 2] * 40})  # 120 samples, 3 classes
         task = infer_task(df, "target")
         assert task == TaskType.classification
@@ -35,13 +35,14 @@ class TestInferTaskBasic:
 
     def test_high_cardinality_integer_regression(self):
         """Test regression inference with many unique integers."""
+        # 100 unique values in 100 samples = 100/100 = 1.0 >= 0.5 threshold -> regression
         df = pd.DataFrame({"target": list(range(100))})
         task = infer_task(df, "target")
         assert task == TaskType.regression
 
     def test_low_cardinality_integer_classification(self):
         """Test classification inference with few unique integers."""
-        # Use larger dataset so dynamic threshold works properly
+        # 3 unique values in 120 samples = 3/120 = 0.025 < 0.5 threshold -> classification
         df = pd.DataFrame({"target": [1, 2, 3] * 40})  # 120 samples, 3 classes
         task = infer_task(df, "target")
         assert task == TaskType.classification
@@ -125,7 +126,7 @@ class TestInferTaskStringTargets:
 
     def test_numeric_strings_classification(self):
         """Test numeric strings with low cardinality."""
-        # Use larger dataset
+        # Use larger dataset: 3 unique values in 120 samples = 3/120 = 0.025 < 0.5 -> classification
         df = pd.DataFrame(
             {
                 "feature": list(range(120)),
@@ -139,6 +140,7 @@ class TestInferTaskStringTargets:
 
     def test_numeric_strings_regression_after_cleaning(self):
         """Test numeric strings with high cardinality - after cleaning they become numeric."""
+        # 100 unique values in 100 samples = 100/100 = 1.0 >= 0.5 -> regression
         df = pd.DataFrame(
             {
                 "feature1": list(range(100)),
@@ -159,6 +161,7 @@ class TestInferTaskStringTargets:
 
     def test_numeric_strings_with_formatting(self):
         """Test numeric strings with comma formatting."""
+        # 5 unique values in 100 samples = 5/100 = 0.05 < 0.5 -> classification
         df = pd.DataFrame(
             {
                 "feature1": list(range(100)),
@@ -177,6 +180,7 @@ class TestInferTaskStringTargets:
 
     def test_mixed_numeric_and_text_strings(self):
         """Test strings that are partially numeric."""
+        # 4 unique values in 12 samples = 4/12 = 0.33 < 0.5 -> classification
         df = pd.DataFrame(
             {
                 "feature1": list(range(12)),
@@ -195,53 +199,127 @@ class TestInferTaskStringTargets:
 
 
 class TestInferTaskCustomParameters:
-    """Test task inference with custom parameters."""
+    """Test task inference with custom uniqueness ratio threshold parameters."""
 
-    def test_custom_classification_threshold(self):
-        """Test with custom cardinality threshold."""
-        # 25 unique in 250 samples = 10% uniqueness
-        df = pd.DataFrame({"target": list(range(25)) * 10})  # 250 samples, 25 unique
+    def test_custom_uniqueness_ratio_threshold_classification(self):
+        """Test with custom uniqueness ratio threshold for classification.
 
-        # With default threshold (30), should be classification (25 <= 30 and 10% < 50%)
-        task_default = infer_task(df, "target")
-        assert task_default == TaskType.classification
+        Setup: 25 unique values in 100 samples = 0.25 ratio
+        Expected: ratio (0.25) < threshold (0.3) → classification
+        """
+        # Deterministic approach: repeat 25 unique values 4 times each = 100 samples
+        df = pd.DataFrame({"target": list(range(25)) * 4})
 
-        # With lower threshold (20), should be regression (25 > 20)
-        task_custom = infer_task(df, "target", classification_cardinality_threshold=20)
-        assert task_custom == TaskType.regression
+        task = infer_task(df, "target", uniqueness_ratio_threshold=0.3)
+        assert task == TaskType.classification
 
-    def test_large_dataset_with_moderate_cardinality(self):
-        """Test large dataset with moderate unique values."""
-        # 80 unique values in 1000 samples = 8% uniqueness
+    def test_custom_uniqueness_ratio_threshold_regression(self):
+        """Test with custom uniqueness ratio threshold for regression.
+
+        Setup: 70 unique values in 100 samples = 0.70 ratio
+        Expected: ratio (0.70) >= threshold (0.6) → regression
+        """
+        # Create 100 samples with exactly 70 unique values
+        # First 70 values are unique (0-69), remaining 30 repeat from range(30)
+        df = pd.DataFrame({"target": list(range(70)) + list(range(30))})
+
+        task = infer_task(df, "target", uniqueness_ratio_threshold=0.6)
+        assert task == TaskType.regression
+
+    def test_large_dataset_with_moderate_ratio_classification(self):
+        """Test large dataset with moderate uniqueness ratio for classification.
+
+        Setup: 80 unique values in 1000 samples = 0.08 ratio
+        Expected: ratio (0.08) < threshold (0.1) → classification
+
+        Note: We use deterministic generation to guarantee exactly 80 unique values.
+        np.random.choice with replace=True would not guarantee this.
+        """
         n_samples = 1000
         n_unique = 80
         np.random.seed(42)
-        df = pd.DataFrame({"target": np.random.choice(range(n_unique), size=n_samples)})
 
-        task = infer_task(df, "target")
-        # 80 > 30 (default threshold) -> regression
+        # Generate exactly n_unique values distributed across n_samples
+        # Each unique value appears approximately n_samples/n_unique times
+        repeats = n_samples // n_unique  # 12 full repetitions
+        remainder = n_samples % n_unique  # 40 additional values
+        target_values = list(range(n_unique)) * repeats + list(range(remainder))
+
+        # Shuffle to randomize order while maintaining exact uniqueness count
+        np.random.shuffle(target_values)
+        df = pd.DataFrame({"target": target_values})
+
+        task = infer_task(df, "target", uniqueness_ratio_threshold=0.1)
+        # Verify: 0.08 < 0.1 → classification
+        assert task == TaskType.classification
+
+    def test_large_dataset_with_high_ratio_regression(self):
+        """Test large dataset with high uniqueness ratio for regression.
+
+        Setup: 800 unique values in 1000 samples = 0.80 ratio
+        Expected: ratio (0.80) >= threshold (0.7) → regression
+
+        Note: We guarantee exactly 800 unique values by first including all 800 unique
+        values once, then randomly sampling 200 additional values from the same pool.
+        """
+        n_samples = 1000
+        desired_unique = 800
+        np.random.seed(42)
+
+        # Step 1: Include all unique values exactly once (800 values)
+        unique_vals = list(range(desired_unique))
+
+        # Step 2: Sample remaining values with replacement (200 values)
+        # This ensures we have exactly 800 unique values total
+        additional_vals = np.random.choice(
+            range(desired_unique), size=n_samples - desired_unique, replace=True
+        ).tolist()
+
+        # Step 3: Combine and shuffle to randomize order
+        all_vals = unique_vals + additional_vals
+        np.random.shuffle(all_vals)
+        df = pd.DataFrame({"target": all_vals})
+
+        task = infer_task(df, "target", uniqueness_ratio_threshold=0.7)
+        # Verify: 0.80 >= 0.7 → regression
         assert task == TaskType.regression
 
 
 class TestInferTaskIntegerBoundary:
     """Test boundary cases for integer targets."""
 
-    def test_exactly_at_threshold(self):
-        """Test with exactly 20 unique values (at threshold)."""
-        df = pd.DataFrame({"target": list(range(20)) * 10})
-        task = infer_task(df, "target", classification_cardinality_threshold=20)
-        # At threshold -> classification
-        assert task == TaskType.classification
-
-    def test_just_above_threshold(self):
-        """Test with 21 unique values (just above threshold)."""
-        df = pd.DataFrame({"target": list(range(21)) * 10})
-        task = infer_task(df, "target", classification_cardinality_threshold=20)
-        # Above threshold -> regression
+    def test_exactly_at_ratio_threshold_classification(self):
+        """Test with uniqueness ratio exactly at classification threshold."""
+        # 50 unique in 100 samples = 0.5 == 0.5 threshold -> regression (>= threshold)
+        df = pd.DataFrame({"target": list(range(50)) * 2})
+        task = infer_task(df, "target", uniqueness_ratio_threshold=0.5)
+        # 0.5 >= 0.5 -> regression
         assert task == TaskType.regression
 
-    def test_large_integers_as_ids(self):
+    def test_just_below_threshold_classification(self):
+        """Test with uniqueness ratio just below threshold."""
+        # 50 unique values in 100 samples = 50/100 = 0.5, but if we make one more duplicate, we get 49/100 = 0.49 < 0.5 -> classification
+        # Create 100 values with 49 unique ones (so ratio is 49/100 = 0.49)
+        df = pd.DataFrame(
+            {"target": list(range(49)) + [0] * 51}
+        )  # 49 unique + 51 duplicates of 0 = 100 total, 49 unique
+        task = infer_task(df, "target", uniqueness_ratio_threshold=0.5)
+        # 49/100 = 0.49 < 0.5 -> classification
+        assert task == TaskType.classification
+
+    def test_just_above_threshold_regression(self):
+        """Test with uniqueness ratio just above threshold."""
+        # 51 unique in 100 samples = 0.51 >= 0.5 threshold -> regression
+        df = pd.DataFrame(
+            {"target": list(range(51)) + [0, 0, 0, 0, 0, 0, 0, 0, 0]}
+        )  # 100 samples, 51 unique
+        task = infer_task(df, "target", uniqueness_ratio_threshold=0.5)
+        # 0.51 >= 0.5 -> regression
+        assert task == TaskType.regression
+
+    def test_large_integers_as_ids_classification(self):
         """Test large integers that look like IDs."""
+        # 10 unique values in 100 samples = 10/100 = 0.1 < 0.5 threshold -> classification
         df = pd.DataFrame(
             {
                 "target": [1001, 1002, 1003, 1004, 1005, 1006, 1007, 1008, 1009, 1010]
@@ -249,7 +327,7 @@ class TestInferTaskIntegerBoundary:
             }
         )
         task = infer_task(df, "target")
-        # Only 10 unique values -> classification
+        # Only 10 unique values out of 100 -> classification
         assert task == TaskType.classification
 
 
