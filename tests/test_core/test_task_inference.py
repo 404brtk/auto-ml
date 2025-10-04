@@ -4,7 +4,8 @@ import pandas as pd
 import numpy as np
 import pytest
 from auto_ml_pipeline.task_inference import infer_task
-from auto_ml_pipeline.config import TaskType
+from auto_ml_pipeline.config import TaskType, CleaningConfig
+from auto_ml_pipeline.data_cleaning import clean_data
 
 
 class TestInferTaskBasic:
@@ -111,37 +112,85 @@ class TestInferTaskStringTargets:
 
     def test_string_categorical(self):
         """Test categorical strings."""
-        df = pd.DataFrame({"target": ["cat", "dog", "cat", "dog", "cat", "dog"]})
-        task = infer_task(df, "target")
+        df = pd.DataFrame(
+            {
+                "feature": list(range(6)),
+                "target": ["cat", "dog", "cat", "dog", "cat", "dog"],
+            }
+        )
+        cleaning_cfg = CleaningConfig(remove_id_columns=False)
+        df_cleaned = clean_data(df, "target", cleaning_cfg)
+        task = infer_task(df_cleaned, "target")
         assert task == TaskType.classification
 
     def test_numeric_strings_classification(self):
         """Test numeric strings with low cardinality."""
         # Use larger dataset
-        df = pd.DataFrame({"target": ["1", "2", "3"] * 40})  # 120 samples, 3 classes
-        task = infer_task(df, "target")
+        df = pd.DataFrame(
+            {
+                "feature": list(range(120)),
+                "target": ["1", "2", "3"] * 40,  # 120 samples, 3 classes
+            }
+        )
+        cleaning_cfg = CleaningConfig(remove_id_columns=False)
+        df_cleaned = clean_data(df, "target", cleaning_cfg)
+        task = infer_task(df_cleaned, "target")
         assert task == TaskType.classification
 
-    def test_numeric_strings_regression(self):
-        """Test numeric strings with high cardinality."""
-        df = pd.DataFrame({"target": [str(i) for i in range(100)]})
-        task = infer_task(df, "target")
+    def test_numeric_strings_regression_after_cleaning(self):
+        """Test numeric strings with high cardinality - after cleaning they become numeric."""
+        df = pd.DataFrame(
+            {
+                "feature1": list(range(100)),
+                "target": [str(i) for i in range(100)],  # 100% numeric strings
+            }
+        )
+
+        # Simulate the cleaning process
+        cleaning_cfg = CleaningConfig(
+            remove_id_columns=False
+        )  # Disable ID removal for this test
+        df_cleaned = clean_data(df, "target", cleaning_cfg)
+
+        # Now test task inference on the cleaned data
+        task = infer_task(df_cleaned, "target")
+        # After cleaning, these become numeric with 100 unique values -> regression
         assert task == TaskType.regression
 
     def test_numeric_strings_with_formatting(self):
         """Test numeric strings with comma formatting."""
         df = pd.DataFrame(
-            {"target": ["1,000", "2,000", "3,000", "4,000", "5,000"] * 20}
+            {
+                "feature1": list(range(100)),
+                "target": ["1,000", "2,000", "3,000", "4,000", "5,000"] * 20,
+            }
         )
-        task = infer_task(df, "target")
-        # After removing commas, should be detected as numeric
-        assert task == TaskType.classification  # Low unique values
+
+        # Simulate the cleaning process
+        cleaning_cfg = CleaningConfig(remove_id_columns=False)
+        df_cleaned = clean_data(df, "target", cleaning_cfg)
+
+        # Now test task inference on the cleaned data
+        task = infer_task(df_cleaned, "target")
+        # After cleaning, should be detected as numeric, though low unique values -> classification
+        assert task == TaskType.classification
 
     def test_mixed_numeric_and_text_strings(self):
         """Test strings that are partially numeric."""
-        df = pd.DataFrame({"target": ["text1", "text2", "123", "456"] * 3})
-        task = infer_task(df, "target")
-        # Not mostly numeric -> classification
+        df = pd.DataFrame(
+            {
+                "feature1": list(range(12)),
+                "target": ["text1", "text2", "123", "456"] * 3,
+            }
+        )
+
+        # Simulate the cleaning process
+        cleaning_cfg = CleaningConfig(remove_id_columns=False)
+        df_cleaned = clean_data(df, "target", cleaning_cfg)
+
+        # Now test task inference on the cleaned data
+        task = infer_task(df_cleaned, "target")
+        # After cleaning, if still object type, treat as classification
         assert task == TaskType.classification
 
 
@@ -160,21 +209,6 @@ class TestInferTaskCustomParameters:
         # With lower threshold (20), should be regression (25 > 20)
         task_custom = infer_task(df, "target", classification_cardinality_threshold=20)
         assert task_custom == TaskType.regression
-
-    def test_custom_numeric_coercion_threshold(self):
-        """Test with custom numeric coercion threshold."""
-        # 70% numeric, 30% text - use larger dataset
-        target_data = (["1", "2", "3", "4", "5", "6", "7"] * 10) + (["text"] * 30)
-        df = pd.DataFrame({"target": target_data})
-
-        # With 95% threshold, should be classification (not enough numeric)
-        task_high = infer_task(df, "target", numeric_coercion_threshold=0.95)
-        assert task_high == TaskType.classification
-
-        # With 60% threshold, should treat as numeric
-        task_low = infer_task(df, "target", numeric_coercion_threshold=0.6)
-        # After coercion, has low cardinality (7 unique) -> classification
-        assert task_low == TaskType.classification
 
     def test_large_dataset_with_moderate_cardinality(self):
         """Test large dataset with moderate unique values."""
