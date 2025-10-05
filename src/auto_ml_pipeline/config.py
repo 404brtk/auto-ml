@@ -33,20 +33,100 @@ class SplitConfig(BaseModel):
 class OutlierConfig(BaseModel):
     """Configuration for outlier detection and handling."""
 
-    strategy: Optional[Literal["iqr", "zscore", "none"]] = Field(
-        default=None, description="Outlier detection strategy"
+    strategy: Optional[Literal["iqr", "zscore", "isolation_forest", "none"]] = Field(
+        default="none", description="Outlier detection strategy"
     )
     method: Literal["clip", "remove"] = Field(
-        default="clip", description="How to handle detected outliers"
+        default="remove",
+        description="How to handle detected outliers. "
+        "NOTE: IsolationForest only supports 'remove' method. ",
     )
+    # IQR
     iqr_multiplier: float = Field(
         default=1.5,
         gt=0,
         description="IQR multiplier for outlier detection (1.5 = standard, 3.0 = conservative)",
     )
+    # Z-score
     zscore_threshold: float = Field(
         default=3.0, gt=0, description="Z-score threshold for outlier detection"
     )
+    # IsolationForest
+    contamination: Union[float, Literal["auto"]] = Field(
+        default="auto",
+        description="Expected proportion of outliers for IsolationForest (0, 0.5] or 'auto'",
+    )
+    n_estimators: int = Field(
+        default=100,
+        ge=10,
+        le=1000,
+        description="Number of isolation trees (more trees = more stable but slower)",
+    )
+    max_samples: Union[int, float, Literal["auto"]] = Field(
+        default="auto",
+        description="Number of samples to train each tree. 'auto' uses min(256, n_samples), "
+        "int for absolute count, float (0, 1] for fraction of samples",
+    )
+    random_state: Optional[int] = Field(
+        default=None,
+        ge=0,
+        description="Random seed for IsolationForest reproducibility",
+    )
+
+    @field_validator("contamination")
+    @classmethod
+    def validate_contamination(cls, v):
+        if v == "auto":
+            return v
+        if isinstance(v, (int, float)):
+            if v <= 0 or v > 0.5:
+                raise ValueError(
+                    f"contamination must be 'auto' or in range (0, 0.5], got {v}"
+                )
+            return float(v)
+        raise ValueError(
+            f"contamination must be 'auto' or float, got {type(v).__name__}"
+        )
+
+    @field_validator("max_samples")
+    @classmethod
+    def validate_max_samples(cls, v):
+        if v == "auto":
+            return v
+
+        if isinstance(v, int):
+            if v <= 0:
+                raise ValueError(f"max_samples as int must be positive, got {v}")
+            return v
+
+        if isinstance(v, float):
+            if v <= 0 or v > 1:
+                raise ValueError(
+                    f"max_samples as float must be in range (0, 1], got {v}"
+                )
+            return v
+
+        raise ValueError(
+            f"max_samples must be 'auto', positive int, or float in (0, 1], got {type(v).__name__}"
+        )
+
+    @model_validator(mode="after")
+    def validate_strategy_method_combination(self):
+        """
+        Validate that strategy and method combinations are valid.
+
+        IsolationForest only supports 'remove' method because it produces
+        binary classifications (outlier/inlier) without natural clipping bounds.
+        """
+        if self.strategy == "isolation_forest" and self.method == "clip":
+            raise ValueError(
+                "IsolationForest does not support method='clip'. "
+                "IsolationForest is a classification-based method that identifies outliers "
+                "but does not produce natural numerical bounds for clipping. "
+                "Please use method='remove' with strategy='isolation_forest', "
+                "or use strategy='iqr' or 'zscore' if you need clipping functionality."
+            )
+        return self
 
 
 class CleaningConfig(BaseModel):
