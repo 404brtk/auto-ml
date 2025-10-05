@@ -14,15 +14,17 @@ split:
 
 # Data cleaning configuration
 cleaning:
+  # Pre-split cleaning (applied before train/test split)
   drop_duplicates: true           # Remove duplicate rows
-  max_missing_row_ratio: 0.5      # Max missing ratio per row before dropping (0-1)
-  remove_constant_features: true  # Remove constant/quasi-constant features
-  constant_tolerance: 1.0         # Threshold for constant features (1.0=100% constant, 0.95=95%+ same)
-  remove_id_columns: true         # Remove columns with >95% unique values (likely IDs)
-  id_column_threshold: 0.95       # Uniqueness ratio threshold for ID column detection
+  max_missing_row_ratio: 0.5      # Max missing ratio per row before dropping (0-1), null to disable
+  remove_constant_features: true  # Remove constant/quasi-constant features (PRE-SPLIT)
+  constant_tolerance: 1.0         # Threshold for constant features. 1.0 = only 100% constant, 0.95 = 95%+ same value
+  remove_id_columns: true         # Automatically remove columns with >95% unique values (likely IDs)
+  id_column_threshold: 0.95       # Uniqueness ratio threshold for ID column detection (0.5-1.0)
   handle_mixed_types: "coerce"    # How to handle mixed type columns: "coerce" or "drop"
   numeric_coercion_threshold: 0.9 # Minimum ratio of values that must be numeric-coercible for object columns (0-1)
-  uniqueness_ratio_threshold: 0.5 # Threshold for uniqueness ratio in integer targets to classify as classification vs regression (0-1)
+  uniqueness_ratio_threshold: 0.05 # Uniqueness ratio threshold for integer targets with high cardinality (0-1)
+  max_categories_absolute: 20     # Maximum unique values for automatic classification inference (2+)
   min_rows_after_cleaning: 1      # Minimum rows required after cleaning (raises error if below)
   min_cols_after_cleaning: 1      # Minimum columns required after cleaning (raises error if below)
   special_null_values:            # List of string values to treat as null/missing values
@@ -46,12 +48,19 @@ cleaning:
     - ""
     - " "
 
-  # Outlier detection (fitted on training data, applied to test if method=clip)
+  # Outlier detection (fit on train, transform both train+test for clip, train only for remove)
   outlier:
-    strategy: null        # "iqr", "zscore", or null to disable
-    method: "clip"        # "clip" or "remove" detected outliers
-    iqr_multiplier: 1.5   # IQR multiplier (1.5=standard, 3.0=conservative)
-    zscore_threshold: 3.0 # Z-score threshold for outlier detection
+    strategy: "none"        # "iqr", "zscore", "isolation_forest", or "none" to disable
+    method: "remove"        # "clip" or "remove" detected outliers. NOTE: IsolationForest only supports 'remove' method.
+    # IQR parameters
+    iqr_multiplier: 1.5     # IQR multiplier for outlier detection (1.5 = standard, 3.0 = conservative)
+    # Z-score parameters
+    zscore_threshold: 3.0   # Z-score threshold for outlier detection
+    # IsolationForest parameters
+    contamination: "auto"   # Expected proportion of outliers for IsolationForest: (0, 0.5] or "auto"
+    n_estimators: 100       # Number of isolation trees (10-1000, more = more stable but slower)
+    max_samples: "auto"     # Samples per tree: "auto" = min(256, n), int for count, float (0,1] for fraction
+    random_state: null      # Random seed for IsolationForest reproducibility (null or int >= 0)
 
 # Feature engineering configuration
 features:
@@ -60,7 +69,7 @@ features:
     strategy_cat: "most_frequent" # "most_frequent" or "random_sample" for categorical features
     strategy_num: "median"        # "mean", "median", "knn", or "random_sample" for numeric features
     knn_neighbors: 5              # Number of neighbors for KNN imputation (1-20)
-    random_sample_seed: 42        # Random seed for random_sample imputation
+    random_sample_seed: 42        # Random seed for random_sample imputation (null for non-reproducible)
 
   # Feature scaling
   scaling:
@@ -68,9 +77,9 @@ features:
 
   # Categorical encoding
   encoding:
-    high_cardinality_number_threshold: 100  # Number of unique values to consider a feature as high cardinality (2-1000)
-    high_cardinality_pct_threshold: 0.1     # Percentage of unique values to consider a feature as high cardinality (0-1)
-    high_cardinality_encoder: "target"      # Encoder to use for high cardinality features: "target" or "frequency"
+    high_cardinality_number_threshold: 100  # Number of unique values to consider high cardinality (2-1000)
+    high_cardinality_pct_threshold: 0.1     # Percentage of unique values to consider high cardinality (0-1)
+    high_cardinality_encoder: "target"      # Encoder for high cardinality: "target" or "frequency"
     scale_high_card: false                  # Apply scaling to high cardinality encoded features
 
   # Feature extraction
@@ -83,39 +92,39 @@ features:
 # Feature selection configuration
 selection:
   # Variance-based selection
-  variance_threshold: null  # Remove features with variance below threshold (0+)
+  variance_threshold: null  # Remove features with variance below threshold (>= 0), null to disable
 
   # Correlation-based selection
-  correlation_threshold: null  # Remove features with correlation above threshold (0-1)
+  correlation_threshold: null  # Remove features with correlation above threshold (0-1), null to disable
   correlation_method: "pearson" # Correlation method: "pearson", "spearman", or "kendall"
 
   # Univariate selection using mutual information
-  mutual_info_k: null       # Select top K features using mutual information (1+)
+  mutual_info_k: null       # Select top K features using mutual information (> 0), null to disable
 
   # Dimensionality reduction with PCA
-  pca_components: null      # Number of components (int) or variance ratio (0-1)
+  pca_components: null      # Number of components (int > 0) or variance ratio (0-1), null to disable
 
 # Hyperparameter optimization configuration
 optimization:
   enabled: true            # Enable hyperparameter optimization
   n_trials: 50             # Number of optimization trials (1-1000)
-  timeout: 3600            # Timeout in seconds (60+), null for no limit
-  retrain_on_full_data: true  # Retrain best model on full dataset for production
-  sampler: "tpe"           # Sampler algorithm: "tpe" (Tree-structured Parzen Estimator), "random", or "cmaes"
+  timeout: 3600            # Timeout in seconds (>= 60), null for no limit
+  retrain_on_full_data: true  # Retrain best model on full dataset (train + test) for production
+  sampler: "tpe"           # Sampler algorithm: "tpe", "random", or "cmaes"
   pruner: "median"         # Pruner for early stopping: "median", "successive_halving", "hyperband", or "none"
   pruner_startup_trials: 5 # Number of trials before pruning starts (0-20)
 
 # Model evaluation configuration
 eval:
-  metrics: null            # Custom metrics list, null uses defaults
+  metrics: null            # Custom metrics list (null = use task-appropriate defaults)
 
 # Input/Output configuration
 io:
-  dataset_path: null       # Path to input dataset (set via CLI)
-  target: null             # Target column name (set via CLI)
+  dataset_path: null       # Path to input dataset (typically set via CLI)
+  target: null             # Target column name (typically set via CLI)
   output_dir: "outputs"    # Directory for output files
 
 # Model selection configuration
 models:
-  include: ["xgboost"]      # Specific models to include, null = all available
-  exclude: null             # Models to exclude from training
+  include: ["xgboost"]     # Specific models to include (null = all available models)
+  exclude: null            # Models to exclude from training (null = none excluded)
