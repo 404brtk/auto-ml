@@ -362,9 +362,6 @@ def train(df: pd.DataFrame, target: str, cfg: PipelineConfig) -> TrainResult:
         except Exception as e:
             logger.warning("Skipping OutlierTransformer due to: %s", e)
 
-    # Apply high-missing and constant feature droppers based on training data
-    # These operate on raw DataFrames prior to column-wise preprocessing
-
     # Setup cross-validation and scoring
     cv = get_cv_splitter(task, cfg.split.n_splits, cfg.split.stratify, random_state)
     scorer_name = get_scorer_name(task, getattr(cfg.eval, "metrics", None))
