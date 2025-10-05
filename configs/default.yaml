@@ -48,7 +48,9 @@ cleaning:
     - ""
     - " "
 
-  # Outlier detection (fit on train, transform both train+test for clip, train only for remove)
+  # Outlier detection (learns parameters from training data)
+  # - clip: Caps outlier values to learned bounds (applied to train and test)
+  # - remove: Deletes outlier rows from training data only (test unchanged)
   outlier:
     strategy: "none"        # "iqr", "zscore", "isolation_forest", or "none" to disable
     method: "remove"        # "clip" or "remove" detected outliers. NOTE: IsolationForest only supports 'remove' method.
