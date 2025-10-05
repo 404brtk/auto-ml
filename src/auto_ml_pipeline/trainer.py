@@ -319,6 +319,10 @@ def train(df: pd.DataFrame, target: str, cfg: PipelineConfig) -> TrainResult:
                 method=cfg.cleaning.outlier.method,
                 iqr_multiplier=cfg.cleaning.outlier.iqr_multiplier,
                 zscore_threshold=cfg.cleaning.outlier.zscore_threshold,
+                contamination=cfg.cleaning.outlier.contamination,
+                n_estimators=cfg.cleaning.outlier.n_estimators,
+                max_samples=cfg.cleaning.outlier.max_samples,
+                random_state=cfg.cleaning.outlier.random_state,
             )
             # Fit on training data to learn outlier boundaries
             outlier_transformer.fit(X_train)
