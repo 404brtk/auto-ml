@@ -354,16 +354,24 @@ def train(df: pd.DataFrame, target: str, cfg: PipelineConfig) -> TrainResult:
 
             # If rows were removed (method="remove"), update y_train accordingly
             if len(X_train_cleaned) != len(X_train):
-                if hasattr(X_train_cleaned, "index"):
+                if hasattr(X_train_cleaned, "index") and isinstance(
+                    X_train_cleaned, pd.DataFrame
+                ):
                     # X_train_cleaned is a DataFrame - align y_train with kept indices
                     y_train = y_train.loc[X_train_cleaned.index].reset_index(drop=True)
                     X_train = X_train_cleaned.reset_index(drop=True)
                 else:
-                    # X_train_cleaned is likely a numpy array - slice y_train
-                    y_train = y_train.iloc[: len(X_train_cleaned)].reset_index(
-                        drop=True
-                    )
-                    # Convert to DataFrame if needed
+                    # X_train_cleaned is a numpy array - slice y_train
+                    y_train_sliced = y_train.iloc[: len(X_train_cleaned)]
+
+                    # Ensure it's a Series before calling reset_index
+                    if isinstance(y_train_sliced, pd.Series):
+                        y_train = y_train_sliced.reset_index(drop=True)
+                    else:
+                        # Fallback: convert to Series
+                        y_train = pd.Series(y_train_sliced).reset_index(drop=True)
+
+                    # Convert X_train_cleaned to DataFrame if original was DataFrame
                     if isinstance(X_train, pd.DataFrame):
                         X_train = pd.DataFrame(
                             X_train_cleaned, columns=X_train.columns
