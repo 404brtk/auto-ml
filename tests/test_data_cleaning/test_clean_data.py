@@ -34,15 +34,15 @@ class TestCleanData:
             remove_id_columns=False,
         )
 
-        result = clean_data(df, "target", cfg)
+        result, target = clean_data(df, "target", cfg)
 
         # Should have removed:
         # - Row with NaN target (index 4)
         # - Duplicate row (index 2, since index 0 is kept)
         # - Row with high missing ratio (if any)
         assert len(result) >= 2  # At least 2 rows should remain
-        assert "target" in result.columns
-        assert not result["target"].isna().any()  # No NaN targets
+        assert target in result.columns
+        assert not result[target].isna().any()  # No NaN targets
         assert not result.duplicated().any()  # No duplicates
 
     def test_no_cleaning_config(self):
@@ -53,10 +53,10 @@ class TestCleanData:
 
         cfg = CleaningConfig(drop_duplicates=False, max_missing_row_ratio=None)
 
-        result = clean_data(df, "target", cfg)
+        result, target = clean_data(df, "target", cfg)
         # Missing targets are always removed, even with minimal cleaning
         assert len(result) == 2  # Row with NaN target removed
-        assert not result["target"].isna().any()  # No NaN targets
+        assert not result[target].isna().any()  # No NaN targets
 
     def test_config_defaults(self):
         """Test with default config values."""
@@ -65,7 +65,7 @@ class TestCleanData:
         )
 
         cfg = CleaningConfig()  # Use defaults
-        result = clean_data(df, "target", cfg)
+        result, target = clean_data(df, "target", cfg)
 
         # Default config removes duplicates and missing targets
         assert len(result) == 2  # One duplicate removed
@@ -82,7 +82,7 @@ class TestCleanData:
             max_missing_row_ratio=None,
             remove_id_columns=False,
         )
-        result = clean_data(df, "target", cfg)
+        result, target = clean_data(df, "target", cfg)
 
         # Should have converted datetime column
         datetime_cols = [col for col in result.columns if "datetime_col" in col]
@@ -99,10 +99,10 @@ class TestCleanData:
             max_missing_row_ratio=None,
             remove_id_columns=False,
         )
-        result = clean_data(df, "target", cfg)
+        result, target = clean_data(df, "target", cfg)
 
         # The numeric coercer should have processed the column
-        assert "numeric_str" in result.columns
+        assert target in result.columns
 
     def test_column_name_standardization(self):
         """Test that column names are standardized."""
@@ -119,12 +119,12 @@ class TestCleanData:
             max_missing_row_ratio=None,
             remove_id_columns=False,
         )
-        result = clean_data(df, "Target", cfg)
+        result, target = clean_data(df, "Target", cfg)
 
         # Columns should be standardized
         assert "feature_1" in result.columns
         assert "feature_2" in result.columns
-        assert "target" in result.columns
+        assert target in result.columns
 
     def test_special_null_values_cleaned(self):
         """Test that special null values are replaced."""
@@ -137,7 +137,7 @@ class TestCleanData:
         )
 
         cfg = CleaningConfig()
-        result = clean_data(df, "target", cfg)
+        result, target = clean_data(df, "target", cfg)
 
         # Special values should be replaced with NaN
         assert pd.isna(result["feature1"].iloc[2])  # ?
@@ -156,7 +156,7 @@ class TestCleanData:
         )
 
         cfg = CleaningConfig(drop_duplicates=False, max_missing_row_ratio=None)
-        result = clean_data(df, "target", cfg)
+        result, target = clean_data(df, "target", cfg)
 
         # Inf values should be replaced with NaN
         assert pd.isna(result["feature1"].iloc[1])
@@ -179,12 +179,12 @@ class TestCleanData:
             constant_tolerance=1.0,
             remove_id_columns=False,
         )
-        result = clean_data(df, "target", cfg)
+        result, target = clean_data(df, "target", cfg)
 
         # Constant feature should be removed
         assert "const_feature" not in result.columns
         assert "variable_feature" in result.columns
-        assert "target" in result.columns
+        assert target in result.columns
 
     def test_constant_features_not_removed_when_disabled(self):
         """Test that constant features are kept when config is disabled."""
@@ -202,12 +202,12 @@ class TestCleanData:
             remove_constant_features=False,
             remove_id_columns=False,
         )
-        result = clean_data(df, "target", cfg)
+        result, target = clean_data(df, "target", cfg)
 
         # All features should be kept
         assert "const_feature" in result.columns
         assert "variable_feature" in result.columns
-        assert "target" in result.columns
+        assert target in result.columns
 
     def test_full_pipeline_with_new_features(self):
         """Test complete pipeline with all new features."""
@@ -240,7 +240,7 @@ class TestCleanData:
             constant_tolerance=1.0,
             remove_id_columns=False,
         )
-        result = clean_data(df, "Target", cfg)
+        result, target = clean_data(df, "Target", cfg)
 
         # Should have:
         # - Standardized column names
@@ -253,7 +253,7 @@ class TestCleanData:
         assert "feature_1" in result.columns
         assert "feature_2" in result.columns
         assert "numeric" in result.columns
-        assert "target" in result.columns
+        assert target in result.columns
 
     def test_mixed_types_coerced(self):
         """Test that mixed type columns are coerced by default."""
@@ -270,10 +270,10 @@ class TestCleanData:
             drop_duplicates=False,
             remove_id_columns=False,
         )
-        result = clean_data(df, "target", cfg)
+        result, target = clean_data(df, "target", cfg)
 
         # Mixed column should be converted to string
-        assert "mixed_col" in result.columns
+        assert target in result.columns
         assert result["mixed_col"].dtype == object
         assert result["mixed_col"].iloc[0] == "1"
 
@@ -292,7 +292,7 @@ class TestCleanData:
             drop_duplicates=False,
             remove_id_columns=False,
         )
-        result = clean_data(df, "target", cfg)
+        result, target = clean_data(df, "target", cfg)
 
         # Mixed column should be removed
         assert "mixed_col" not in result.columns
@@ -311,10 +311,10 @@ class TestCleanData:
             drop_duplicates=False,
             remove_id_columns=False,
         )
-        result = clean_data(df, "target", cfg)
+        result, target = clean_data(df, "target", cfg)
 
         # Whitespace should be trimmed
-        assert "str_col" in result.columns
+        assert target in result.columns
         assert result["str_col"].iloc[0] == "apple"
         assert result["str_col"].iloc[1] == "banana"
         assert result["str_col"].iloc[2] == "cherry"
@@ -335,13 +335,13 @@ class TestCleanData:
             id_column_threshold=0.95,
             drop_duplicates=False,
         )
-        result = clean_data(df, "target", cfg)
+        result, target = clean_data(df, "target", cfg)
 
         # ID columns should be removed
         assert "customer_id" not in result.columns
         assert "transaction_id" not in result.columns
         assert "feature" in result.columns
-        assert "target" in result.columns
+        assert target in result.columns
 
     def test_id_columns_kept_when_disabled(self):
         """Test that ID columns are kept when disabled."""
@@ -357,12 +357,12 @@ class TestCleanData:
             remove_id_columns=False,
             drop_duplicates=False,
         )
-        result = clean_data(df, "target", cfg)
+        result, target = clean_data(df, "target", cfg)
 
         # ID column should be kept
         assert "customer_id" in result.columns
         assert "feature" in result.columns
-        assert "target" in result.columns
+        assert target in result.columns
 
     def test_min_rows_validation_passes(self):
         """Test that validation passes with sufficient rows."""
@@ -379,7 +379,7 @@ class TestCleanData:
         )
 
         # Should not raise error
-        result = clean_data(df, "target", cfg)
+        result, target = clean_data(df, "target", cfg)
         assert len(result) >= 10
 
     def test_min_rows_validation_fails(self):

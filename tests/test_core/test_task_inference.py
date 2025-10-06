@@ -130,8 +130,8 @@ class TestInferTaskStringTargets:
             }
         )
         cleaning_cfg = CleaningConfig(remove_id_columns=False)
-        df_cleaned = clean_data(df, "target", cleaning_cfg)
-        task = infer_task(df_cleaned, "target")
+        df_cleaned, target = clean_data(df, "target", cleaning_cfg)
+        task = infer_task(df_cleaned, target)
         assert task == TaskType.classification
 
     def test_numeric_strings_classification(self):
@@ -146,8 +146,8 @@ class TestInferTaskStringTargets:
             }
         )
         cleaning_cfg = CleaningConfig(remove_id_columns=False)
-        df_cleaned = clean_data(df, "target", cleaning_cfg)
-        task = infer_task(df_cleaned, "target")
+        df_cleaned, target = clean_data(df, "target", cleaning_cfg)
+        task = infer_task(df_cleaned, target)
         assert task == TaskType.classification
 
     def test_numeric_strings_regression_after_cleaning(self):
@@ -163,8 +163,8 @@ class TestInferTaskStringTargets:
         )
 
         cleaning_cfg = CleaningConfig(remove_id_columns=False)
-        df_cleaned = clean_data(df, "target", cleaning_cfg)
-        task = infer_task(df_cleaned, "target")
+        df_cleaned, target = clean_data(df, "target", cleaning_cfg)
+        task = infer_task(df_cleaned, target)
         # After cleaning, 100 unique numeric values -> regression
         assert task == TaskType.regression
 
@@ -181,8 +181,8 @@ class TestInferTaskStringTargets:
         )
 
         cleaning_cfg = CleaningConfig(remove_id_columns=False)
-        df_cleaned = clean_data(df, "target", cleaning_cfg)
-        task = infer_task(df_cleaned, "target")
+        df_cleaned, target = clean_data(df, "target", cleaning_cfg)
+        task = infer_task(df_cleaned, target)
         # 5 unique values <= 20 -> classification
         assert task == TaskType.classification
 
@@ -196,8 +196,8 @@ class TestInferTaskStringTargets:
         )
 
         cleaning_cfg = CleaningConfig(remove_id_columns=False)
-        df_cleaned = clean_data(df, "target", cleaning_cfg)
-        task = infer_task(df_cleaned, "target")
+        df_cleaned, target = clean_data(df, "target", cleaning_cfg)
+        task = infer_task(df_cleaned, target)
         # After cleaning, if still object type -> classification
         assert task == TaskType.classification
 

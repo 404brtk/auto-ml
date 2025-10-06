@@ -28,11 +28,11 @@ class TestEndToEndClassification:
 
         # Data cleaning
         cleaning_cfg = CleaningConfig(drop_duplicates=True)
-        df_clean = clean_data(df, "target", cleaning_cfg)
+        df_clean, target = clean_data(df, "target", cleaning_cfg)
 
         # Feature engineering
         fe_cfg = FeatureEngineeringConfig()
-        X = df_clean.drop("target", axis=1)
+        X = df_clean.drop(target, axis=1)
 
         preprocessor, col_types = build_preprocessor(X, fe_cfg)
         X_transformed = preprocessor.fit_transform(X)
@@ -54,10 +54,10 @@ class TestEndToEndClassification:
         )
 
         cleaning_cfg = CleaningConfig(drop_duplicates=False)
-        df_clean = clean_data(df, "target", cleaning_cfg)
+        df_clean, target = clean_data(df, "target", cleaning_cfg)
 
         fe_cfg = FeatureEngineeringConfig()
-        X = df_clean.drop("target", axis=1)
+        X = df_clean.drop(target, axis=1)
 
         preprocessor, _ = build_preprocessor(X, fe_cfg)
         X_transformed = preprocessor.fit_transform(X)
@@ -70,7 +70,7 @@ class TestEndToEndClassification:
         df = pd.DataFrame({"feat": [1, 2, 1, 3], "target": [0, 1, 0, 1]})
 
         cleaning_cfg = CleaningConfig(drop_duplicates=True)
-        df_clean = clean_data(df, "target", cleaning_cfg)
+        df_clean, target = clean_data(df, "target", cleaning_cfg)
 
         # Should remove one duplicate
         assert len(df_clean) == 3
@@ -87,10 +87,10 @@ class TestEndToEndClassification:
 
         # Disable ID column removal for small test dataset
         cleaning_cfg = CleaningConfig(remove_id_columns=False)
-        df_clean = clean_data(df, "target", cleaning_cfg)
+        df_clean, target = clean_data(df, "target", cleaning_cfg)
 
         fe_cfg = FeatureEngineeringConfig(extract_datetime=True, extract_time=True)
-        X = df_clean.drop("target", axis=1)
+        X = df_clean.drop(target, axis=1)
 
         preprocessor, col_types = build_preprocessor(X, fe_cfg)
         X_transformed = preprocessor.fit_transform(X)
@@ -114,12 +114,12 @@ class TestEndToEndClassification:
 
         # Disable ID column removal for small test dataset
         cleaning_cfg = CleaningConfig(remove_id_columns=False)
-        df_clean = clean_data(df, "target", cleaning_cfg)
+        df_clean, target = clean_data(df, "target", cleaning_cfg)
 
         fe_cfg = FeatureEngineeringConfig(
             handle_text=True, max_features_text=100, text_length_threshold=50
         )
-        X = df_clean.drop("target", axis=1)
+        X = df_clean.drop(target, axis=1)
 
         preprocessor, col_types = build_preprocessor(X, fe_cfg)
         X_transformed = preprocessor.fit_transform(X)
@@ -145,10 +145,10 @@ class TestEndToEndRegression:
         )
 
         cleaning_cfg = CleaningConfig()
-        df_clean = clean_data(df, "target", cleaning_cfg)
+        df_clean, target = clean_data(df, "target", cleaning_cfg)
 
         fe_cfg = FeatureEngineeringConfig()
-        X = df_clean.drop("target", axis=1)
+        X = df_clean.drop(target, axis=1)
 
         preprocessor, _ = build_preprocessor(X, fe_cfg)
         X_transformed = preprocessor.fit_transform(X)
@@ -166,11 +166,11 @@ class TestEndToEndRegression:
 
         # Disable ID column removal for test dataset
         cleaning_cfg = CleaningConfig(remove_id_columns=False)
-        df_clean = clean_data(df, "target", cleaning_cfg)
+        df_clean, target = clean_data(df, "target", cleaning_cfg)
 
         fe_cfg = FeatureEngineeringConfig()
-        X_clean = df_clean.drop("target", axis=1)
-        y_clean = df_clean["target"]
+        X_clean = df_clean.drop(target, axis=1)
+        y_clean = df_clean[target]
 
         preprocessor, _ = build_preprocessor(X_clean, fe_cfg)
         X_transformed = preprocessor.fit_transform(X_clean)
@@ -238,11 +238,11 @@ class TestDataCleaningIntegration:
             remove_id_columns=False,  # Disable for test dataset
         )
 
-        result = clean_data(df, "target", cfg)
+        result, target = clean_data(df, "target", cfg)
 
         # Should remove rows with missing target and duplicates
         assert len(result) < len(df)
-        assert not result["target"].isna().any()
+        assert not result[target].isna().any()
         # Check for duplicates properly
         has_duplicates = result.duplicated().any()
         assert not bool(has_duplicates)
@@ -260,7 +260,7 @@ class TestDataCleaningIntegration:
 
         # Disable ID column removal for small test dataset
         cfg = CleaningConfig(remove_id_columns=False)
-        result = clean_data(df, "target", cfg)
+        result, target = clean_data(df, "target", cfg)
 
         assert pd.api.types.is_integer_dtype(result["int_col"])
         assert pd.api.types.is_float_dtype(result["float_col"])
@@ -277,7 +277,7 @@ class TestDataCleaningIntegration:
 
         # Disable ID column removal for small test dataset
         cfg = CleaningConfig(remove_id_columns=False)
-        result = clean_data(df, "target", cfg)
+        result, target = clean_data(df, "target", cfg)
 
         # Date strings should be converted to datetime
         assert pd.api.types.is_datetime64_any_dtype(result["date_str"])
@@ -288,7 +288,7 @@ class TestDataCleaningIntegration:
 
         # Disable ID column removal for small test dataset
         cfg = CleaningConfig(remove_id_columns=False)
-        result = clean_data(df, "target", cfg)
+        result, target = clean_data(df, "target", cfg)
 
         # Numeric strings should be converted to numbers
         assert pd.api.types.is_numeric_dtype(result["numeric_str"])
@@ -418,11 +418,11 @@ class TestCompleteWorkflow:
 
         # Step 1: Clean
         clean_cfg = CleaningConfig(drop_duplicates=True, max_missing_row_ratio=0.5)
-        df_clean = clean_data(df, "target", clean_cfg)
+        df_clean, target = clean_data(df, "target", clean_cfg)
 
         # Step 2: Split features and target
-        X = df_clean.drop("target", axis=1)
-        y = df_clean["target"]
+        X = df_clean.drop(target, axis=1)
+        y = df_clean[target]
 
         # Step 3: Feature engineering
         from auto_ml_pipeline.config import EncodingConfig
@@ -473,10 +473,10 @@ class TestCompleteWorkflow:
 
         # Clean
         clean_cfg = CleaningConfig(drop_duplicates=True)
-        df_clean = clean_data(df, "target", clean_cfg)
+        df_clean, target = clean_data(df, "target", clean_cfg)
 
-        X = df_clean.drop("target", axis=1)
-        y = df_clean["target"]
+        X = df_clean.drop(target, axis=1)
+        y = df_clean[target]
 
         # Feature engineering
         fe_cfg = FeatureEngineeringConfig()
@@ -508,9 +508,9 @@ class TestCompleteWorkflow:
         df_small = pd.DataFrame({"feat": [1, 2, 3], "target": [0, 1, 0]})
 
         clean_cfg = CleaningConfig()
-        df_clean = clean_data(df_small, "target", clean_cfg)
+        df_clean, target = clean_data(df_small, "target", clean_cfg)
 
-        X = df_clean.drop("target", axis=1)
+        X = df_clean.drop(target, axis=1)
         fe_cfg = FeatureEngineeringConfig()
         preprocessor, _ = build_preprocessor(X, fe_cfg)
         X_transformed = preprocessor.fit_transform(X)
@@ -532,9 +532,9 @@ class TestCompleteWorkflow:
         results = []
         for _ in range(2):
             clean_cfg = CleaningConfig()
-            df_clean = clean_data(df, "target", clean_cfg)
+            df_clean, target = clean_data(df, "target", clean_cfg)
 
-            X = df_clean.drop("target", axis=1)
+            X = df_clean.drop(target, axis=1)
             fe_cfg = FeatureEngineeringConfig()
             preprocessor, _ = build_preprocessor(X, fe_cfg)
             X_transformed = preprocessor.fit_transform(X)
