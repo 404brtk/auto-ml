@@ -125,17 +125,11 @@ def standardize_column_names(df: pd.DataFrame, target: str) -> tuple[pd.DataFram
 
     df_clean.columns = final_names
 
-    # Log changes
     changes = [
         (old, new) for old, new in zip(original_names, final_names) if old != new
     ]
     if changes:
-        logger.info(
-            "Standardized %d column names (e.g., '%s' -> '%s')",
-            len(changes),
-            changes[0][0],
-            changes[0][1],
-        )
+        logger.info("Standardized %d column names", len(changes))
 
     # Track target column transformation
     target_idx = original_names.index(target)
