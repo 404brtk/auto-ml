@@ -115,6 +115,35 @@ def get_available_models(task: TaskType, random_state: int) -> Dict[str, Any]:
     return available_models_regression(random_state=random_state, n_jobs=1)
 
 
+def get_models_from_cfg(
+    cfg: PipelineConfig, task: TaskType, random_state: int
+) -> Dict[str, Any]:
+    """Get filtered models based on configuration."""
+    all_models = get_available_models(task, random_state)
+
+    models_list = getattr(cfg.models, "models", None)
+
+    if not models_list:
+        logger.info("No specific models configured. Using all available models.")
+        return all_models
+
+    models = {k: v for k, v in all_models.items() if k in set(models_list)}
+
+    if not models:
+        requested = set(models_list)
+        available = set(all_models.keys())
+        invalid = requested - available
+
+        raise ValueError(
+            f"No valid models found. "
+            f"Requested: {sorted(requested)}, "
+            f"Available: {sorted(available)}, "
+            f"Invalid: {sorted(invalid)}"
+        )
+
+    return models
+
+
 def build_ml_pipeline(X: pd.DataFrame, cfg: PipelineConfig, model: Any) -> SkPipeline:
     """Build complete ML pipeline with all preprocessing steps."""
     task = cfg.task or TaskType.regression
@@ -396,21 +425,8 @@ def train(df: pd.DataFrame, target: str, cfg: PipelineConfig) -> TrainResult:
     scorer_name = get_scorer_name(task, getattr(cfg.eval, "metrics", None))
     logger.info("Using scorer: %s", scorer_name)
 
-    # Get and filter available models
-    models = get_available_models(task, random_state)
-    include = getattr(cfg.models, "include", None)
-    exclude = getattr(cfg.models, "exclude", None)
-
-    if include:
-        models = {k: v for k, v in models.items() if k in set(include)}
-    if exclude:
-        models = {k: v for k, v in models.items() if k not in set(exclude)}
-
-    if not models:
-        raise ValueError(
-            "No models available after applying include/exclude filters. "
-            f"Include: {include}, Exclude: {exclude}"
-        )
+    # Get models
+    models = get_models_from_cfg(cfg, task, random_state)
 
     logger.info("Models to evaluate: %s", list(models.keys()))
 

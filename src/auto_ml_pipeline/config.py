@@ -422,26 +422,17 @@ class IOConfig(BaseModel):
 
 
 class ModelsConfig(BaseModel):
-    """Configuration for model selection and training.
+    """Configuration for model selection and training."""
 
-    - include: only run these model keys (e.g., ["random_forest", "lightgbm"]).
-    - exclude: run all available models except these.
-    If both are provided, include takes precedence and exclude is applied after include.
-    """
-
-    include: Optional[List[str]] = Field(
+    models: Optional[List[str]] = Field(
         default=["xgboost"],
-        description="Specific models to include (None = all available models)",
-    )
-    exclude: Optional[List[str]] = Field(
-        default=None, description="Models to exclude from training"
+        description="List of models to train (None or empty list = all available models)",
     )
 
-    @field_validator("include", "exclude")
+    @field_validator("models")
     @classmethod
-    def validate_model_lists(cls, v: Optional[List[str]]) -> Optional[List[str]]:
-        if v is not None:
-            # Import here to avoid circular imports
+    def validate_model_list(cls, v: Optional[List[str]]) -> Optional[List[str]]:
+        if v is not None and len(v) > 0:
             from auto_ml_pipeline.models import (
                 available_models_classification,
                 available_models_regression,
@@ -455,7 +446,8 @@ class ModelsConfig(BaseModel):
             invalid_models = set(v) - valid_models
             if invalid_models:
                 raise ValueError(
-                    f"Invalid model names: {invalid_models}. Valid models: {sorted(valid_models)}"
+                    f"Invalid model names: {invalid_models}. "
+                    f"Valid models: {sorted(valid_models)}"
                 )
         return v
 
