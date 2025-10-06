@@ -82,11 +82,18 @@ def handle_mixed_types(df: pd.DataFrame, strategy: str = "coerce") -> pd.DataFra
     return df_clean
 
 
-def standardize_column_names(df: pd.DataFrame) -> pd.DataFrame:
+def standardize_column_names(df: pd.DataFrame, target: str) -> tuple[pd.DataFrame, str]:
     df_clean = df.copy()
 
     # Store original names for logging
     original_names = df_clean.columns.tolist()
+
+    # Verify target exists before processing
+    if target not in original_names:
+        raise ValueError(
+            f"Target column '{target}' not found in DataFrame. "
+            f"Available columns: {original_names}"
+        )
 
     # Standardize names
     new_names = []
@@ -130,7 +137,18 @@ def standardize_column_names(df: pd.DataFrame) -> pd.DataFrame:
             changes[0][1],
         )
 
-    return df_clean
+    # Track target column transformation
+    target_idx = original_names.index(target)
+    standardized_target = final_names[target_idx]
+
+    if target != standardized_target:
+        logger.info(
+            "Target column standardized: '%s' -> '%s'",
+            target,
+            standardized_target,
+        )
+
+    return df_clean, standardized_target
 
 
 def trim_whitespace(df: pd.DataFrame) -> pd.DataFrame:
@@ -442,10 +460,7 @@ def clean_data(df: pd.DataFrame, target: str, cfg: CleaningConfig) -> pd.DataFra
     )
 
     # 1. Standardize column names (avoid issues with special characters)
-    result_df = standardize_column_names(result_df)
-    # Update target name if it was changed
-    target_lower = str(target).lower()
-    target = re.sub(r"[^a-z0-9_]", "_", target_lower).strip("_")
+    result_df, target = standardize_column_names(result_df, target)
 
     # 2. Handle mixed data types
     result_df = handle_mixed_types(result_df, strategy=cfg.handle_mixed_types)
@@ -512,4 +527,4 @@ def clean_data(df: pd.DataFrame, target: str, cfg: CleaningConfig) -> pd.DataFra
         result_df.shape[0],
         result_df.shape[1],
     )
-    return result_df
+    return result_df, target

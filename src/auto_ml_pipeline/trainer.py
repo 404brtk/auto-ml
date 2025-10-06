@@ -303,7 +303,7 @@ def train(df: pd.DataFrame, target: str, cfg: PipelineConfig) -> TrainResult:
     random.seed(random_state)
 
     # Clean data (pre-split operations only)
-    df = clean_data(df, target, cfg.cleaning)
+    df, target = clean_data(df, target, cfg.cleaning)
     logger.info("After cleaning: %d rows, %d columns", df.shape[0], df.shape[1])
 
     # Infer task if not specified
