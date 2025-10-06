@@ -28,7 +28,12 @@ from auto_ml_pipeline.models import (
     available_models_regression,
     model_search_space,
 )
-from auto_ml_pipeline.evaluation import evaluate_predictions
+from auto_ml_pipeline.metrics import (
+    compute_metrics,
+    get_optimization_metric,
+    get_optimization_metric_from_config,
+    get_evaluation_metrics_from_config,
+)
 from auto_ml_pipeline.io_utils import make_run_dir, save_json, save_model
 from auto_ml_pipeline.logging_utils import get_logger
 from auto_ml_pipeline.task_inference import infer_task
@@ -57,36 +62,6 @@ def get_cv_splitter(task: TaskType, n_splits: int, stratify: bool, random_state:
             n_splits=n_splits, shuffle=True, random_state=random_state
         )
     return KFold(n_splits=n_splits, shuffle=True, random_state=random_state)
-
-
-def get_scorer_name(task: TaskType, requested_metrics: Optional[list] = None) -> str:
-    """Get sklearn scorer name based on task and requested metrics."""
-    defaults = {
-        TaskType.classification: "f1_macro",
-        TaskType.regression: "neg_root_mean_squared_error",
-    }
-
-    if not requested_metrics:
-        return defaults[task]
-
-    metric = str(requested_metrics[0]).lower()
-
-    metric_mapping = {
-        # Classification
-        "accuracy": "accuracy",
-        "acc": "accuracy",
-        "f1": "f1_macro",
-        "f1_macro": "f1_macro",
-        "roc_auc": "roc_auc",
-        "auc": "roc_auc",
-        # Regression
-        "rmse": "neg_root_mean_squared_error",
-        "mse": "neg_mean_squared_error",
-        "mae": "neg_mean_absolute_error",
-        "r2": "r2",
-    }
-
-    return metric_mapping.get(metric, defaults[task])
 
 
 def suggest_hyperparameter(
@@ -422,7 +397,9 @@ def train(df: pd.DataFrame, target: str, cfg: PipelineConfig) -> TrainResult:
 
     # Setup cross-validation and scoring
     cv = get_cv_splitter(task, cfg.split.n_splits, cfg.split.stratify, random_state)
-    scorer_name = get_scorer_name(task, getattr(cfg.eval, "metrics", None))
+    scorer_name = get_optimization_metric(
+        task, get_optimization_metric_from_config(task, cfg.metrics)
+    )
     logger.info("Using scorer: %s", scorer_name)
 
     # Get models
@@ -518,7 +495,13 @@ def train(df: pd.DataFrame, target: str, cfg: PipelineConfig) -> TrainResult:
             except Exception as proba_error:
                 logger.warning("Could not get probability predictions: %s", proba_error)
 
-        metrics = evaluate_predictions(task, y_test, y_pred, y_proba)
+        metrics = compute_metrics(
+            task,
+            y_test,
+            y_pred,
+            y_proba,
+            metric_names=get_evaluation_metrics_from_config(task, cfg.metrics),
+        )
         logger.info("Test metrics: %s", metrics)
 
     except Exception as e:

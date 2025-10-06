@@ -400,13 +400,91 @@ class OptimizationConfig(BaseModel):
     )
 
 
-class EvalConfig(BaseModel):
-    """Configuration for model evaluation."""
+class MetricsConfig(BaseModel):
+    """Configuration for model evaluation metrics."""
 
-    metrics: Optional[List[str]] = Field(
-        default=None,
-        description="Custom metrics to evaluate (None = use default metrics)",
+    # Classification metrics
+    classification_optimization_metric: Optional[str] = Field(
+        default="f1_macro",
+        description=(
+            "Metric to optimize during cross-validation for classification tasks. "
+            "Set to None to use recommended default (f1_macro). "
+            "Available: accuracy, precision_macro, recall_macro, f1_macro, f1_weighted, roc_auc"
+        ),
     )
+    classification_evaluation_metrics: Optional[List[str]] = Field(
+        default=["accuracy", "f1_macro", "precision_macro", "recall_macro"],
+        description=(
+            "Metrics to compute on test set for classification tasks. "
+            "Set to None to use recommended defaults [accuracy, f1_macro, precision_macro, recall_macro]. "
+            "Available: accuracy, precision_macro, recall_macro, f1_macro, f1_weighted, roc_auc"
+        ),
+    )
+    # Regression metrics
+    regression_optimization_metric: Optional[str] = Field(
+        default="rmse",
+        description=(
+            "Metric to optimize during cross-validation for regression tasks. "
+            "Set to None to use recommended default (rmse). "
+            "Available: rmse, mse, mae, mape, r2"
+        ),
+    )
+    regression_evaluation_metrics: Optional[List[str]] = Field(
+        default=["rmse", "mae", "r2"],
+        description=(
+            "Metrics to compute on test set for regression tasks. "
+            "Set to None to use recommended defaults [rmse, mae, r2]. "
+            "Available: rmse, mse, mae, mape, r2"
+        ),
+    )
+
+    @field_validator(
+        "classification_optimization_metric",
+        "classification_evaluation_metrics",
+        mode="after",
+    )
+    @classmethod
+    def validate_classification_metrics(cls, v):
+        from auto_ml_pipeline.config import TaskType
+        from auto_ml_pipeline.metrics import MetricsRegistry
+
+        if isinstance(v, str):
+            v = v.lower()
+            metrics_to_validate = [v]
+        else:
+            v = [m.lower() for m in v]
+            metrics_to_validate = v
+
+        try:
+            MetricsRegistry.validate_metrics(
+                TaskType.classification, metrics_to_validate
+            )
+        except ValueError as e:
+            raise ValueError(f"Invalid classification metrics: {e}") from e
+
+        return v
+
+    @field_validator(
+        "regression_optimization_metric", "regression_evaluation_metrics", mode="after"
+    )
+    @classmethod
+    def validate_regression_metrics(cls, v):
+        from auto_ml_pipeline.config import TaskType
+        from auto_ml_pipeline.metrics import MetricsRegistry
+
+        if isinstance(v, str):
+            v = v.lower()
+            metrics_to_validate = [v]
+        else:
+            v = [m.lower() for m in v]
+            metrics_to_validate = v
+
+        try:
+            MetricsRegistry.validate_metrics(TaskType.regression, metrics_to_validate)
+        except ValueError as e:
+            raise ValueError(f"Invalid regression metrics: {e}") from e
+
+        return v
 
 
 class IOConfig(BaseModel):
@@ -463,7 +541,7 @@ class PipelineConfig(BaseModel):
     features: FeatureEngineeringConfig = Field(default_factory=FeatureEngineeringConfig)
     selection: FeatureSelectionConfig = Field(default_factory=FeatureSelectionConfig)
     optimization: OptimizationConfig = Field(default_factory=OptimizationConfig)
-    eval: EvalConfig = Field(default_factory=EvalConfig)
+    metrics: MetricsConfig = Field(default_factory=MetricsConfig)
     io: IOConfig = Field(default_factory=IOConfig)
     models: ModelsConfig = Field(default_factory=ModelsConfig)
 
