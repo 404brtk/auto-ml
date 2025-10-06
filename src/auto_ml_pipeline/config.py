@@ -154,10 +154,10 @@ class CleaningConfig(BaseModel):
 
     remove_id_columns: bool = Field(
         default=True,
-        description="Automatically remove columns with >95% unique values (likely IDs)",
+        description="Automatically remove columns with >id_column_threshold unique values (likely IDs)",
     )
     id_column_threshold: float = Field(
-        default=0.95,
+        default=0.99,
         ge=0.5,
         le=1.0,
         description="Uniqueness ratio threshold for ID column detection",
