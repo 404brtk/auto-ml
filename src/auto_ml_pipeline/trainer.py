@@ -143,10 +143,10 @@ def optimize_model(
     scorer_name: str,
     n_trials: int,
     timeout: Optional[int],
-    random_state: int,
     sampler_name: str = "tpe",
     pruner_name: str = "median",
     pruner_startup_trials: int = 5,
+    optuna_random_seed: Optional[int] = None,
 ) -> tuple[float, Dict[str, Any]]:
     """Optimize model hyperparameters using Optuna."""
     search_space = model_search_space(model_name)
@@ -195,18 +195,18 @@ def optimize_model(
     # Configure sampler
     sampler: optuna.samplers.BaseSampler
     if sampler_name == "tpe":
-        sampler = optuna.samplers.TPESampler(seed=random_state)
+        sampler = optuna.samplers.TPESampler(seed=optuna_random_seed)
     elif sampler_name == "random":
-        sampler = optuna.samplers.RandomSampler(seed=random_state)
+        sampler = optuna.samplers.RandomSampler(seed=optuna_random_seed)
     elif sampler_name == "cmaes":
         # CMA-ES works best with continuous parameters
         # warn_independent_sampling=False to handle mixed search spaces better
         sampler = optuna.samplers.CmaEsSampler(
-            seed=random_state, warn_independent_sampling=False
+            seed=optuna_random_seed, warn_independent_sampling=False
         )
     else:
         logger.warning("Unknown sampler %s, using TPE", sampler_name)
-        sampler = optuna.samplers.TPESampler(seed=random_state)
+        sampler = optuna.samplers.TPESampler(seed=optuna_random_seed)
 
     # Configure pruner
     pruner: optuna.pruners.BasePruner
@@ -421,18 +421,18 @@ def train(df: pd.DataFrame, target: str, cfg: PipelineConfig) -> TrainResult:
         try:
             if cfg.optimization.enabled:
                 score, params = optimize_model(
-                    model_name,
-                    pipeline,
-                    X_train,
-                    y_train,
-                    cv,
-                    scorer_name,
-                    cfg.optimization.n_trials,
-                    cfg.optimization.timeout,
-                    random_state,
-                    cfg.optimization.sampler,
-                    cfg.optimization.pruner,
-                    cfg.optimization.pruner_startup_trials,
+                    model_name=model_name,
+                    pipeline=pipeline,
+                    X_train=X_train,
+                    y_train=y_train,
+                    cv=cv,
+                    scorer_name=scorer_name,
+                    n_trials=cfg.optimization.n_trials,
+                    timeout=cfg.optimization.timeout,
+                    sampler_name=cfg.optimization.sampler,
+                    pruner_name=cfg.optimization.pruner,
+                    pruner_startup_trials=cfg.optimization.pruner_startup_trials,
+                    optuna_random_seed=cfg.optimization.optuna_random_seed,
                 )
             else:
                 # No optimization - just cross-validate

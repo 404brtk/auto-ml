@@ -393,6 +393,11 @@ class OptimizationConfig(BaseModel):
         le=20,
         description="Number of trials before pruning starts (for median pruner)",
     )
+    optuna_random_seed: Optional[int] = Field(
+        default=None,
+        ge=0,
+        description="Random seed for Optuna samplers (None for non-reproducible)",
+    )
 
 
 class EvalConfig(BaseModel):
