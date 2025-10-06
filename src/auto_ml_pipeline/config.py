@@ -20,7 +20,9 @@ class SplitConfig(BaseModel):
         default=0.2, gt=0, lt=1, description="Proportion of data for testing"
     )
     random_state: int = Field(
-        default=42, ge=0, description="Random seed for reproducibility"
+        default=42,
+        ge=0,
+        description="Random seed for reproducibility (None for non-reproducible)",
     )
     stratify: bool = Field(
         default=True, description="Whether to stratify the split based on target"
@@ -70,7 +72,7 @@ class OutlierConfig(BaseModel):
     random_state: Optional[int] = Field(
         default=None,
         ge=0,
-        description="Random seed for IsolationForest reproducibility",
+        description="Random seed for IsolationForest reproducibility (None for non-reproducible)",
     )
 
     @field_validator("contamination")
