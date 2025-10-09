@@ -505,7 +505,7 @@ class ModelsConfig(BaseModel):
     Available models (work for both classification and regression unless noted):
 
     Linear Models:
-    - "logistic": Logistic Regression (classification only)
+    - "logistic": Logistic Regression (classification only) - yes, it's not a mistake
     - "linear": Linear Regression (regression only)
     - "ridge": Ridge Regression/Classifier
     - "lasso": Lasso Regression (regression only)
@@ -537,7 +537,7 @@ class ModelsConfig(BaseModel):
     """
 
     models: Optional[List[str]] = Field(
-        default=["xgboost"],
+        default=["linear", "lasso"],
         description="List of models to train (None or empty list = all available models)",
     )
 
