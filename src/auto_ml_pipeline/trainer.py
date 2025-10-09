@@ -107,17 +107,22 @@ def get_models_from_cfg(
 
     models = {k: v for k, v in all_models.items() if k in set(models_list)}
 
-    if not models:
-        requested = set(models_list)
-        available = set(all_models.keys())
-        invalid = requested - available
+    requested = set(models_list)
+    available = set(all_models.keys())
+    invalid = requested - available
 
-        raise ValueError(
-            f"No valid models found. "
-            f"Requested: {sorted(requested)}, "
-            f"Available: {sorted(available)}, "
-            f"Invalid: {sorted(invalid)}"
-        )
+    if invalid:
+        if models:
+            logger.warning(
+                f"Some requested models are not available for {task.value}: {sorted(invalid)}. "
+                f"Proceeding with valid models: {sorted(models.keys())}"
+            )
+        else:
+            raise ValueError(
+                f"No valid models found for {task.value}. "
+                f"Invalid models: {sorted(invalid)}. "
+                f"Available models: {sorted(available)}"
+            )
 
     return models
 
