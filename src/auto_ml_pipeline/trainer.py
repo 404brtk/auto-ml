@@ -78,6 +78,9 @@ def suggest_hyperparameter(
         )
     elif param_type == "uniform":
         return trial.suggest_float(param_name, float(bounds[0]), float(bounds[1]))
+    elif param_type == "categorical":
+        choices = list(bounds) if isinstance(bounds, tuple) else bounds
+        return trial.suggest_categorical(param_name, choices)
     else:
         logger.warning("Unknown parameter type: %s", param_type)
         return None
