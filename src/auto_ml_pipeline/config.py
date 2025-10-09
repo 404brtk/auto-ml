@@ -500,7 +500,41 @@ class IOConfig(BaseModel):
 
 
 class ModelsConfig(BaseModel):
-    """Configuration for model selection and training."""
+    """Configuration for model selection and training.
+
+    Available models (work for both classification and regression unless noted):
+
+    Linear Models:
+    - "logistic": Logistic Regression (classification only)
+    - "linear": Linear Regression (regression only)
+    - "ridge": Ridge Regression/Classifier
+    - "lasso": Lasso Regression (regression only)
+    - "elastic_net": ElasticNet (regression only)
+    - "sgd": Stochastic Gradient Descent
+
+    Probabilistic Models:
+    - "naive_bayes": Gaussian Naive Bayes (classification only)
+
+    Instance-Based Models:
+    - "knn": K-Nearest Neighbors
+    - "svm": Support Vector Machine
+
+    Tree-Based Models:
+        Single Tree:
+        - "decision_tree": Decision Tree
+
+        Bagging (parallel):
+        - "random_forest": Random Forest
+        - "extra_trees": Extra Trees
+
+        Boosting (sequential):
+        - "gradient_boosting": Gradient Boosting
+        - "hist_gradient_boosting": Histogram-based Gradient Boosting
+        - "adaboost": AdaBoost
+        - "xgboost": XGBoost
+        - "lightgbm": LightGBM
+        - "catboost": CatBoost
+    """
 
     models: Optional[List[str]] = Field(
         default=["xgboost"],
