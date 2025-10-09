@@ -90,6 +90,7 @@ def available_models_classification(
         models["catboost"] = CatBoostClassifier(
             random_state=random_state,
             verbose=False,
+            allow_writing_files=False,
             thread_count=n_jobs,
         )
 
@@ -139,6 +140,7 @@ def available_models_regression(
         models["catboost"] = CatBoostRegressor(
             random_state=random_state,
             verbose=False,
+            allow_writing_files=False,
             thread_count=n_jobs,
         )
 
