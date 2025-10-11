@@ -54,7 +54,7 @@ def available_models_classification(
     models = {
         "logistic": LogisticRegression(random_state=random_state, n_jobs=n_jobs),
         "ridge": RidgeClassifier(random_state=random_state),
-        "sgd": SGDClassifier(random_state=random_state, n_jobs=n_jobs),
+        "sgd": SGDClassifier(random_state=random_state, n_jobs=n_jobs, tol=1e-3),
         "naive_bayes": GaussianNB(),
         "svm": SVC(random_state=random_state),
         "knn": KNeighborsClassifier(n_jobs=n_jobs),
@@ -74,8 +74,6 @@ def available_models_classification(
         models["xgboost"] = XGBClassifier(
             n_jobs=n_jobs,
             random_state=random_state,
-            tree_method="hist",
-            eval_metric="logloss",
             verbosity=0,
         )
 
@@ -105,7 +103,7 @@ def available_models_regression(
         "ridge": Ridge(random_state=random_state),
         "lasso": Lasso(random_state=random_state),
         "elastic_net": ElasticNet(random_state=random_state),
-        "sgd": SGDRegressor(random_state=random_state),
+        "sgd": SGDRegressor(random_state=random_state, tol=1e-3),
         "svm": SVR(),
         "knn": KNeighborsRegressor(n_jobs=n_jobs),
         "decision_tree": DecisionTreeRegressor(random_state=random_state),
@@ -124,8 +122,6 @@ def available_models_regression(
         models["xgboost"] = XGBRegressor(
             n_jobs=n_jobs,
             random_state=random_state,
-            tree_method="hist",
-            eval_metric="rmse",
             verbosity=0,
         )
 
@@ -162,15 +158,15 @@ def model_search_space(model_name: str) -> HyperparamSpace:
             "solver": ("categorical", ("lbfgs", "liblinear", "saga")),
             "max_iter": ("int", (100, 5000)),
         },
-        "linear": {},  # Regression only, no hyperparameters
+        "linear": {},  # Regression only, no hyperparameters to tune
         "lasso": {  # Regression only
             "alpha": ("loguniform", (1e-4, 10.0)),
-            "max_iter": ("int", (1000, 5000)),
+            "max_iter": ("int", (2000, 10000)),
         },
         "elastic_net": {  # Regression only
             "alpha": ("loguniform", (1e-4, 10.0)),
             "l1_ratio": ("uniform", (0.1, 1.0)),
-            "max_iter": ("int", (1000, 5000)),
+            "max_iter": ("int", (2000, 10000)),
         },
         "naive_bayes": {  # Classification only
             "var_smoothing": ("loguniform", (1e-12, 1e-5)),
@@ -182,11 +178,11 @@ def model_search_space(model_name: str) -> HyperparamSpace:
         },
         "sgd": {
             "alpha": ("loguniform", (1e-5, 1e-1)),
-            "penalty": ("categorical", ("l1", "l2", "elasticnet")),
+            "penalty": ("categorical", ("l2", "elasticnet")),
             "l1_ratio": ("uniform", (0.0, 1.0)),
             "learning_rate": ("categorical", ("constant", "optimal", "adaptive")),
             "eta0": ("loguniform", (1e-4, 1.0)),
-            "max_iter": ("int", (1000, 5000)),
+            "max_iter": ("int", (500, 3000)),
         },
         "decision_tree": {
             "max_depth": ("int", (3, 20)),
@@ -196,7 +192,7 @@ def model_search_space(model_name: str) -> HyperparamSpace:
         },
         "random_forest": {
             "n_estimators": ("int", (100, 500)),
-            "max_depth": ("int", (4, 15)),
+            "max_depth": ("int", (4, 20)),
             "min_samples_split": ("int", (2, 10)),
             "min_samples_leaf": ("int", (1, 5)),
             "max_features": ("uniform", (0.3, 1.0)),
@@ -204,7 +200,7 @@ def model_search_space(model_name: str) -> HyperparamSpace:
         },
         "extra_trees": {
             "n_estimators": ("int", (100, 500)),
-            "max_depth": ("int", (4, 15)),
+            "max_depth": ("int", (4, 20)),
             "min_samples_split": ("int", (2, 10)),
             "min_samples_leaf": ("int", (1, 5)),
             "max_features": ("uniform", (0.3, 1.0)),
@@ -222,7 +218,7 @@ def model_search_space(model_name: str) -> HyperparamSpace:
             "max_iter": ("int", (100, 500)),
             "learning_rate": ("loguniform", (0.01, 0.3)),
             "max_depth": ("int", (3, 10)),
-            "min_samples_leaf": ("int", (10, 50)),
+            "min_samples_leaf": ("int", (5, 50)),
             "l2_regularization": ("loguniform", (1e-10, 1.0)),
         },
         "adaboost": {
@@ -239,6 +235,7 @@ def model_search_space(model_name: str) -> HyperparamSpace:
             "gamma": ("loguniform", (1e-8, 1.0)),
             "reg_alpha": ("loguniform", (1e-8, 1.0)),
             "reg_lambda": ("loguniform", (1e-8, 10.0)),
+            "tree_method": ("categorical", ("auto", "hist")),
         },
         "lightgbm": {
             "n_estimators": ("int", (100, 500)),
@@ -263,8 +260,9 @@ def model_search_space(model_name: str) -> HyperparamSpace:
         "svm": {
             "C": ("loguniform", (0.1, 100.0)),
             "kernel": ("categorical", ("linear", "rbf", "poly")),
-            "gamma": ("loguniform", (1e-4, 1.0)),
+            "gamma": ("categorical", ("scale", "auto")),
             "degree": ("int", (2, 5)),
+            "max_iter": ("int", (2000, 10000)),
         },
         "knn": {
             "n_neighbors": ("int", (3, 30)),
