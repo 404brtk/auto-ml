@@ -213,18 +213,22 @@ def build_preprocessor(
 
     # Low cardinality categorical pipeline
     if col_types.categorical_low:
-        cat_low_pipeline = Pipeline(
-            [
-                (
-                    "imputer",
-                    get_categorical_imputer(
-                        strategy=cfg.imputation.strategy_cat,
-                        random_sample_seed=cfg.imputation.random_sample_seed,
-                    ),
+        steps = [
+            (
+                "imputer",
+                get_categorical_imputer(
+                    strategy=cfg.imputation.strategy_cat,
+                    random_sample_seed=cfg.imputation.random_sample_seed,
                 ),
-                ("onehot", OneHotEncoder(handle_unknown="ignore", sparse_output=False)),
-            ]
-        )
+            ),
+            ("onehot", OneHotEncoder(handle_unknown="ignore", sparse_output=False)),
+        ]
+
+        # Optional scaling for encoded features
+        if cfg.encoding.scale_low_card:
+            steps.append(("scaler", get_scaler(cfg.scaling.strategy)))
+
+        cat_low_pipeline = Pipeline(steps)
         transformers.append(("cat_low", cat_low_pipeline, col_types.categorical_low))
 
     # High cardinality categorical pipeline

@@ -278,8 +278,11 @@ class EncodingConfig(BaseModel):
     high_cardinality_encoder: Literal["target", "frequency"] = Field(
         default="target", description="Encoder to use for high cardinality features"
     )
+    scale_low_card: bool = Field(
+        default=False, description="Apply scaling to low cardinality encoded features"
+    )
     scale_high_card: bool = Field(
-        default=False, description="Apply scaling to high cardinality encoded features"
+        default=True, description="Apply scaling to high cardinality encoded features"
     )
 
 
@@ -537,7 +540,7 @@ class ModelsConfig(BaseModel):
     """
 
     models: Optional[List[str]] = Field(
-        default=["linear", "lasso"],
+        default=["xgboost"],
         description="List of models to train (None or empty list = all available models)",
     )
 
