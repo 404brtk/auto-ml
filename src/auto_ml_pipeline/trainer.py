@@ -415,6 +415,11 @@ def train(df: pd.DataFrame, target: str, cfg: PipelineConfig) -> TrainResult:
 
     logger.info("Models to evaluate: %s", list(models.keys()))
 
+    if not cfg.optimization.enabled:
+        logger.info(
+            "Optimization disabled - evaluating all models with default hyperparameters"
+        )
+
     # Model evaluation loop
     best_score = -np.inf
     best_model_name = ""
@@ -444,7 +449,7 @@ def train(df: pd.DataFrame, target: str, cfg: PipelineConfig) -> TrainResult:
                     optuna_random_seed=cfg.optimization.optuna_random_seed,
                 )
             else:
-                # No optimization - just cross-validate
+                # No optimization - just cross-validate with default hyperparameters
                 scores = cross_val_score(
                     pipeline, X_train, y_train, cv=cv, scoring=scorer_name, n_jobs=-1
                 )
