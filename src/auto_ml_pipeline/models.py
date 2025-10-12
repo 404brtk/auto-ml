@@ -262,7 +262,7 @@ def model_search_space(model_name: str) -> HyperparamSpace:
             "kernel": ("categorical", ("linear", "rbf", "poly")),
             "gamma": ("categorical", ("scale", "auto")),
             "degree": ("int", (2, 5)),
-            "max_iter": ("int", (2000, 10000)),
+            "max_iter": ("int", (20000, 50000)),
         },
         "knn": {
             "n_neighbors": ("int", (3, 30)),
