@@ -159,10 +159,17 @@ def optimize_model(
     pruner_name: str = "median",
     pruner_startup_trials: int = 5,
     optuna_random_seed: Optional[int] = None,
+    fixed_hyperparams: Optional[Dict[str, Any]] = None,
 ) -> tuple[float, Dict[str, Any]]:
     """Optimize model hyperparameters using Optuna."""
     search_space = model_search_space(model_name)
 
+    if fixed_hyperparams:
+        for param in fixed_hyperparams.keys():
+            search_space.pop(param, None)
+        logger.info(
+            f"Using fixed hyperparameters for {model_name}: {fixed_hyperparams}"
+        )
     if not search_space:
         # No hyperparameters to tune
         try:
@@ -180,6 +187,10 @@ def optimize_model(
             ) from e
 
     base_pipeline = clone(pipeline)
+
+    if fixed_hyperparams:
+        fixed_pipeline_params = {f"model__{k}": v for k, v in fixed_hyperparams.items()}
+        base_pipeline.set_params(**fixed_pipeline_params)
 
     def objective(trial: optuna.Trial) -> float:
         # Suggest hyperparameters
@@ -259,6 +270,8 @@ def optimize_model(
         best_params = {
             k.replace("model__", ""): v for k, v in study.best_trial.params.items()
         }
+        if fixed_hyperparams:
+            best_params.update(fixed_hyperparams)
 
         logger.info(
             "Optimization complete: best score = %.4f after %d trials",
@@ -432,6 +445,16 @@ def train(df: pd.DataFrame, target: str, cfg: PipelineConfig) -> TrainResult:
 
         pipeline = build_ml_pipeline(X_train, cfg, base_model)
 
+        fixed_hyperparams = None
+        if (
+            cfg.models.fixed_hyperparameters
+            and model_name in cfg.models.fixed_hyperparameters
+        ):
+            fixed_hyperparams = cfg.models.fixed_hyperparameters[model_name]
+            # set fixed params on base model before pipeline creation
+            param_dict = {f"model__{k}": v for k, v in fixed_hyperparams.items()}
+            pipeline.set_params(**param_dict)
+
         try:
             if cfg.optimization.enabled:
                 score, params = optimize_model(
@@ -447,14 +470,25 @@ def train(df: pd.DataFrame, target: str, cfg: PipelineConfig) -> TrainResult:
                     pruner_name=cfg.optimization.pruner,
                     pruner_startup_trials=cfg.optimization.pruner_startup_trials,
                     optuna_random_seed=cfg.optimization.optuna_random_seed,
+                    fixed_hyperparams=fixed_hyperparams,
                 )
             else:
                 # No optimization - just cross-validate with default hyperparameters
+                # or with fixed hyperparameters if provided
+                if fixed_hyperparams:
+                    logger.info(
+                        f"Using fixed hyperparameters for {model_name}: {fixed_hyperparams}"
+                    )
+                    param_dict = {
+                        f"model__{k}": v for k, v in fixed_hyperparams.items()
+                    }
+                    pipeline.set_params(**param_dict)
+
                 scores = cross_val_score(
                     pipeline, X_train, y_train, cv=cv, scoring=scorer_name, n_jobs=-1
                 )
                 score = float(np.mean(scores))
-                params = {}
+                params = fixed_hyperparams if fixed_hyperparams else {}
 
                 logger.info("Model %s CV score: %.4f", model_name, score)
 

@@ -1,6 +1,6 @@
 from enum import Enum
 from pathlib import Path
-from typing import List, Optional, Union, Literal
+from typing import List, Optional, Union, Literal, Dict, Any
 
 from pydantic import BaseModel, Field, model_validator, field_validator
 import json
@@ -279,7 +279,7 @@ class EncodingConfig(BaseModel):
         default="target", description="Encoder to use for high cardinality features"
     )
     scale_low_card: bool = Field(
-        default=False, description="Apply scaling to low cardinality encoded features"
+        default=True, description="Apply scaling to low cardinality encoded features"
     )
     scale_high_card: bool = Field(
         default=True, description="Apply scaling to high cardinality encoded features"
@@ -542,6 +542,11 @@ class ModelsConfig(BaseModel):
     models: Optional[List[str]] = Field(
         default=["xgboost"],
         description="List of models to train (None or empty list = all available models)",
+    )
+    fixed_hyperparameters: Optional[Dict[str, Dict[str, Any]]] = Field(
+        default=None,
+        description="Fixed hyperparameters per model that won't be optimized. "
+        "Example: {'logistic': {'max_iter': 1000}, 'xgboost': {'n_estimators': 200}}",
     )
 
     @field_validator("models")
