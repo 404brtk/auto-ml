@@ -20,21 +20,41 @@ from auto_ml_pipeline.models import (
 @pytest.fixture
 def sample_classification_data():
     """Generate sample classification data."""
+    np.random.seed(42)
+    n_samples = 100
     X = pd.DataFrame(
-        {"feat1": [1, 2, 3, 4, 5, 6, 7, 8], "feat2": [2, 4, 6, 8, 10, 12, 14, 16]}
+        {
+            "feat1": np.random.randn(n_samples),
+            "feat2": np.random.randn(n_samples),
+            "feat3": np.random.randn(n_samples),
+        }
     )
-    y = np.array([0, 1, 0, 1, 0, 1, 0, 1])
+    # Balanced classes
+    y = np.array([0, 1] * (n_samples // 2))
+    np.random.shuffle(y)
     return X, y
 
 
 @pytest.fixture
 def sample_regression_data():
     """Generate sample regression data."""
+    np.random.seed(42)
+    n_samples = 100
     X = pd.DataFrame(
-        {"feat1": [1, 2, 3, 4, 5, 6, 7, 8], "feat2": [2, 4, 6, 8, 10, 12, 14, 16]}
+        {
+            "feat1": np.random.randn(n_samples),
+            "feat2": np.random.randn(n_samples),
+            "feat3": np.random.randn(n_samples),
+        }
     )
-    y = np.array([1.5, 2.5, 3.5, 4.5, 5.5, 6.5, 7.5, 8.5])
-    return X, y
+    # Linear relationship with noise
+    y = (
+        2.5 * X["feat1"]
+        + 1.5 * X["feat2"]
+        - 0.5 * X["feat3"]
+        + np.random.randn(n_samples) * 0.1
+    )
+    return X, y.values
 
 
 @pytest.fixture
@@ -104,6 +124,7 @@ class TestModelAvailability:
             "adaboost",
             "svm",
             "knn",
+            "mlp",
         ],
     )
     def test_shared_models(self, classification_models, regression_models, model_name):
@@ -155,6 +176,7 @@ class TestModelInstantiation:
             "random_forest",
             "decision_tree",
             "gradient_boosting",
+            "mlp",
         ]
 
         for model_name in models_with_random_state:
@@ -211,6 +233,7 @@ class TestSearchSpaces:
             "svm",
             "knn",
             "naive_bayes",
+            "mlp",
         ],
     )
     def test_search_space_returns_dict(self, model_name):
@@ -242,6 +265,10 @@ class TestSearchSpaces:
             ("lightgbm", ["n_estimators", "num_leaves", "learning_rate"]),
             ("svm", ["C", "kernel"]),
             ("knn", ["n_neighbors", "weights"]),
+            (
+                "mlp",
+                ["hidden_layer_sizes", "activation", "solver", "alpha", "max_iter"],
+            ),
         ],
     )
     def test_expected_hyperparameters(self, model_name, expected_params):
@@ -263,6 +290,7 @@ class TestSearchSpaces:
             "xgboost",
             "lightgbm",
             "svm",
+            "mlp",
         ]
 
         for model_name in all_models:
@@ -304,6 +332,12 @@ class TestSearchSpaces:
             ("svm", "kernel", "categorical"),
             ("knn", "n_neighbors", "int"),
             ("knn", "weights", "categorical"),
+            ("mlp", "hidden_layer_sizes", "categorical"),
+            ("mlp", "activation", "categorical"),
+            ("mlp", "solver", "categorical"),
+            ("mlp", "alpha", "loguniform"),
+            ("mlp", "learning_rate_init", "loguniform"),
+            ("mlp", "max_iter", "int"),
         ],
     )
     def test_parameter_types(self, model_name, param_name, expected_type):
@@ -322,6 +356,10 @@ class TestSearchSpaces:
             "random_forest": {"bootstrap": [True, False]},
             "svm": {"kernel": ["linear", "rbf", "poly"]},
             "knn": {"weights": ["uniform", "distance"]},
+            "mlp": {
+                "activation": ["relu", "tanh"],
+                "solver": ["adam", "lbfgs"],
+            },
         }
 
         for model_name, params in categorical_params.items():
@@ -346,6 +384,25 @@ class TestSearchSpaces:
             low, high = bounds
             assert low < high, "Lower bound should be less than upper bound"
             assert low > 0, "n_estimators should be positive"
+
+    def test_mlp_hidden_layer_sizes_are_strings(self):
+        """Test that MLP hidden_layer_sizes are stored as strings."""
+        space = model_search_space("mlp")
+
+        if "hidden_layer_sizes" in space:
+            param_type, bounds = space["hidden_layer_sizes"]
+            assert param_type == "categorical"
+
+            # All values should be strings
+            for value in bounds:
+                assert isinstance(value, str), (
+                    f"hidden_layer_sizes value should be string, got {type(value)}"
+                )
+
+                # Should contain only digits and commas
+                assert all(c.isdigit() or c == "," for c in value), (
+                    f"hidden_layer_sizes '{value}' should contain only digits and commas"
+                )
 
 
 # ============================================================================
@@ -395,15 +452,16 @@ class TestModelTraining:
     @pytest.mark.parametrize(
         "n_samples,n_features",
         [
-            (10, 2),
             (50, 5),
             (100, 10),
+            (200, 15),
         ],
     )
     def test_models_with_different_data_sizes(
         self, classification_models, n_samples, n_features
     ):
         """Test models work with various data sizes."""
+        np.random.seed(42)
         X = pd.DataFrame(
             np.random.randn(n_samples, n_features),
             columns=[f"feat_{i}" for i in range(n_features)],
@@ -459,8 +517,15 @@ class TestSpecialCases:
 
     def test_models_handle_dataframe_input(self, classification_models):
         """Test that models can handle pandas DataFrame input."""
-        X = pd.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
-        y = np.array([0, 1, 0])
+        np.random.seed(42)
+        X = pd.DataFrame(
+            {
+                "a": np.random.randn(50),
+                "b": np.random.randn(50),
+                "c": np.random.randn(50),
+            }
+        )
+        y = np.random.randint(0, 2, 50)
 
         # Test a few models
         for model_name in ["logistic", "random_forest", "ridge"]:
@@ -468,19 +533,20 @@ class TestSpecialCases:
                 model = classification_models[model_name]
                 model.fit(X, y)
                 predictions = model.predict(X)
-                assert len(predictions) == 3
+                assert len(predictions) == 50
 
     def test_models_handle_numpy_input(self, classification_models):
         """Test that models can handle numpy array input."""
-        X = np.array([[1, 2], [3, 4], [5, 6]])
-        y = np.array([0, 1, 0])
+        np.random.seed(42)
+        X = np.random.randn(50, 3)
+        y = np.random.randint(0, 2, 50)
 
         for model_name in ["logistic", "random_forest", "ridge"]:
             if model_name in classification_models:
                 model = classification_models[model_name]
                 model.fit(X, y)
                 predictions = model.predict(X)
-                assert len(predictions) == 3
+                assert len(predictions) == 50
 
 
 # ============================================================================
@@ -503,6 +569,7 @@ class TestModelConsistency:
             "adaboost",
             "svm",
             "knn",
+            "mlp",
         ]
 
         for model_name in shared_models:
