@@ -26,6 +26,7 @@ from sklearn.svm import SVC, SVR
 from sklearn.neighbors import KNeighborsClassifier, KNeighborsRegressor
 from sklearn.naive_bayes import GaussianNB
 from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
+from sklearn.neural_network import MLPClassifier, MLPRegressor
 
 # Optional dependencies
 _HAS_XGB = True
@@ -68,6 +69,7 @@ def available_models_classification(
             random_state=random_state
         ),
         "adaboost": AdaBoostClassifier(random_state=random_state),
+        "mlp": MLPClassifier(random_state=random_state, early_stopping=True),
     }
 
     if _HAS_XGB:
@@ -116,6 +118,7 @@ def available_models_regression(
             random_state=random_state
         ),
         "adaboost": AdaBoostRegressor(random_state=random_state),
+        "mlp": MLPRegressor(random_state=random_state, early_stopping=True),
     }
 
     if _HAS_XGB:
@@ -256,6 +259,34 @@ def model_search_space(model_name: str) -> HyperparamSpace:
             "random_strength": ("loguniform", (1e-9, 10.0)),
             "bagging_temperature": ("uniform", (0.0, 1.0)),
             "border_count": ("int", (32, 255)),
+        },
+        "mlp": {
+            "hidden_layer_sizes": (
+                "categorical",
+                (
+                    "64",
+                    "128",
+                    "256",
+                    "128,64",
+                    "256,128",
+                    "200,100",
+                    "128,128",
+                    "100,100",
+                    "128,64,32",
+                    "256,128,64",
+                    "100,100,100",
+                ),
+            ),
+            "activation": ("categorical", ("relu", "tanh")),
+            "solver": ("categorical", ("adam",)),
+            "alpha": ("loguniform", (1e-6, 1e-2)),
+            "learning_rate": ("categorical", ("constant", "adaptive")),
+            "learning_rate_init": ("loguniform", (0.01, 0.3)),
+            "batch_size": ("categorical", ("auto", 64, 128, 256)),
+            "max_iter": ("int", (3000, 5000)),
+            "validation_fraction": ("uniform", (0.1, 0.2)),
+            "n_iter_no_change": ("int", (10, 25)),
+            "tol": ("loguniform", (1e-4, 1e-2)),
         },
         "svm": {
             "C": ("loguniform", (0.1, 100.0)),

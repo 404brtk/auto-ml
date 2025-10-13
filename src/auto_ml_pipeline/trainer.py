@@ -55,6 +55,12 @@ class TrainResult:
     production_estimator: Optional[Any] = None  # Model retrained on full data
 
 
+def parse_hidden_layer_sizes(value: Any) -> Any:
+    if isinstance(value, str):
+        return tuple(int(x.strip()) for x in value.split(",") if x.strip())
+    return value
+
+
 def get_cv_splitter(task: TaskType, n_splits: int, stratify: bool, random_state: int):
     """Get appropriate cross-validation splitter."""
     if task == TaskType.classification and stratify:
@@ -198,6 +204,8 @@ def optimize_model(
         for param_name, param_spec in search_space.items():
             suggested_value = suggest_hyperparameter(trial, param_name, param_spec)
             if suggested_value is not None:
+                if param_name == "hidden_layer_sizes":
+                    suggested_value = parse_hidden_layer_sizes(suggested_value)
                 params[f"model__{param_name}"] = suggested_value
 
         base_pipeline.set_params(**params)
@@ -270,6 +278,12 @@ def optimize_model(
         best_params = {
             k.replace("model__", ""): v for k, v in study.best_trial.params.items()
         }
+
+        if "hidden_layer_sizes" in best_params:
+            best_params["hidden_layer_sizes"] = parse_hidden_layer_sizes(
+                best_params["hidden_layer_sizes"]
+            )
+
         if fixed_hyperparams:
             best_params.update(fixed_hyperparams)
 
