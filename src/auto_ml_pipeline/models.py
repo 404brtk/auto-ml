@@ -57,7 +57,7 @@ def available_models_classification(
         "ridge": RidgeClassifier(random_state=random_state),
         "sgd": SGDClassifier(random_state=random_state, n_jobs=n_jobs, tol=1e-3),
         "naive_bayes": GaussianNB(),
-        "svm": SVC(random_state=random_state),
+        "svm": SVC(random_state=random_state, max_iter=-1),
         "knn": KNeighborsClassifier(n_jobs=n_jobs),
         "decision_tree": DecisionTreeClassifier(random_state=random_state),
         "random_forest": RandomForestClassifier(
@@ -106,7 +106,7 @@ def available_models_regression(
         "lasso": Lasso(random_state=random_state),
         "elastic_net": ElasticNet(random_state=random_state),
         "sgd": SGDRegressor(random_state=random_state, tol=1e-3),
-        "svm": SVR(),
+        "svm": SVR(max_iter=-1),
         "knn": KNeighborsRegressor(n_jobs=n_jobs),
         "decision_tree": DecisionTreeRegressor(random_state=random_state),
         "random_forest": RandomForestRegressor(
@@ -293,13 +293,14 @@ def model_search_space(model_name: str) -> HyperparamSpace:
             "kernel": ("categorical", ("linear", "rbf", "poly")),
             "gamma": ("categorical", ("scale", "auto")),
             "degree": ("int", (2, 5)),
-            "max_iter": ("int", (20000, 50000)),
+            # "max_iter": ("int", (20000, 50000)),
         },
         "knn": {
             "n_neighbors": ("int", (3, 30)),
             "weights": ("categorical", ("uniform", "distance")),
             "p": ("int", (1, 3)),
             "leaf_size": ("int", (10, 50)),
+            "algorithm": ("categorical", ("auto", "ball_tree", "kd_tree")),
         },
     }
 
