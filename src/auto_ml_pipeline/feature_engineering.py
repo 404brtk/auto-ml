@@ -242,7 +242,7 @@ def build_preprocessor(
                     "encoder",
                     OneHotEncoder(
                         handle_unknown="ignore",
-                        sparse_output=cfg.encoding.ohe_sparse_output,
+                        sparse_output=True,
                         drop=cfg.encoding.ohe_drop,
                     ),
                 )
@@ -373,6 +373,7 @@ def build_preprocessor(
         transformers=transformers,
         remainder="drop",
         n_jobs=1,  # Avoid threading issues
+        sparse_threshold=cfg.sparse_threshold,
         verbose_feature_names_out=False,
     )
 

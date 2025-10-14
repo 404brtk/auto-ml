@@ -269,9 +269,6 @@ class EncodingConfig(BaseModel):
     ohe_drop: Optional[Literal["first", "if_binary"]] = Field(
         default="first", description="Whether to drop a category in OneHotEncoder"
     )
-    ohe_sparse_output: bool = Field(
-        default=False, description="Whether to use sparse output for OneHotEncoder"
-    )
     high_cardinality_number_threshold: int = Field(
         default=100,
         ge=2,
@@ -320,6 +317,18 @@ class FeatureEngineeringConfig(BaseModel):
         ge=10,
         le=500,
         description="Minimum text length to consider for feature extraction",
+    )
+    sparse_threshold: float = Field(
+        default=0.3,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "Threshold for sparse output in ColumnTransformer. "
+            "If the transformed data has a density (non-zero values) below this threshold, "
+            "output will be a sparse matrix. "
+            "Set to 0.0 to always output sparse if any transformer outputs sparse. "
+            "Set to 1.0 to always output dense arrays."
+        ),
     )
 
 
