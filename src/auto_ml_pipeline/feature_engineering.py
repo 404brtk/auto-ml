@@ -330,6 +330,7 @@ def build_preprocessor(
         transformers=transformers,
         remainder="drop",
         n_jobs=1,  # Avoid threading issues
+        verbose_feature_names_out=False,
     )
 
     return preprocessor, col_types

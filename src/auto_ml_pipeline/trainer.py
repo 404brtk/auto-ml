@@ -148,6 +148,7 @@ def build_ml_pipeline(X: pd.DataFrame, cfg: PipelineConfig, model: Any) -> SkPip
     steps.append(("model", model))
 
     pipeline = SkPipeline(steps)
+    pipeline.set_output(transform="pandas")
 
     return pipeline
 
