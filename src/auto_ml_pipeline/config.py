@@ -263,6 +263,15 @@ class ScalingConfig(BaseModel):
 class EncodingConfig(BaseModel):
     """Configuration for categorical encoding."""
 
+    low_cardinality_encoder: Literal["ohe", "ordinal", "target", "frequency"] = Field(
+        default="ohe", description="Encoder to use for low cardinality features"
+    )
+    ohe_drop: Optional[Literal["first", "if_binary"]] = Field(
+        default="first", description="Whether to drop a category in OneHotEncoder"
+    )
+    ohe_sparse_output: bool = Field(
+        default=False, description="Whether to use sparse output for OneHotEncoder"
+    )
     high_cardinality_number_threshold: int = Field(
         default=100,
         ge=2,

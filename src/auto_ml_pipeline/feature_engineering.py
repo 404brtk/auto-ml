@@ -14,6 +14,7 @@ from sklearn.preprocessing import (
     RobustScaler,
     TargetEncoder,
     FunctionTransformer,
+    OrdinalEncoder,
 )
 from sklearn.feature_extraction.text import TfidfVectorizer
 from auto_ml_pipeline.config import (
@@ -193,10 +194,11 @@ def build_preprocessor(
     )
 
     logger.info(
-        "Preprocessor strategies: num_imputer=%s, cat_imputer=%s, scaler=%s, low_card_encoder=ohe, high_card_encoder=%s, datetime_feats=%s, time_feats=%s, text_handling=%s",
+        "Preprocessor strategies: num_imputer=%s, cat_imputer=%s, scaler=%s, low_card_encoder=%s, high_card_encoder=%s, datetime_feats=%s, time_feats=%s, text_handling=%s",
         cfg.imputation.strategy_num,
         cfg.imputation.strategy_cat,
         cfg.scaling.strategy,
+        cfg.encoding.low_cardinality_encoder,
         cfg.encoding.high_cardinality_encoder,
         cfg.extract_datetime,
         cfg.extract_time,
@@ -232,8 +234,38 @@ def build_preprocessor(
                     random_sample_seed=cfg.imputation.random_sample_seed,
                 ),
             ),
-            ("onehot", OneHotEncoder(handle_unknown="ignore", sparse_output=False)),
         ]
+
+        if cfg.encoding.low_cardinality_encoder == "ohe":
+            steps.append(
+                (
+                    "encoder",
+                    OneHotEncoder(
+                        handle_unknown="ignore",
+                        sparse_output=cfg.encoding.ohe_sparse_output,
+                        drop=cfg.encoding.ohe_drop,
+                    ),
+                )
+            )
+        elif cfg.encoding.low_cardinality_encoder == "ordinal":
+            steps.append(
+                (
+                    "encoder",
+                    OrdinalEncoder(
+                        handle_unknown="use_encoded_value", unknown_value=-1
+                    ),
+                )
+            )
+        elif cfg.encoding.low_cardinality_encoder == "target":
+            target_type = "continuous" if task == TaskType.regression else "auto"
+            steps.append(
+                (
+                    "encoder",
+                    TargetEncoder(cv=5, smooth="auto", target_type=target_type),
+                )
+            )
+        elif cfg.encoding.low_cardinality_encoder == "frequency":
+            steps.append(("encoder", FrequencyEncoder()))
 
         # Optional scaling for encoded features
         if cfg.encoding.scale_low_card:
