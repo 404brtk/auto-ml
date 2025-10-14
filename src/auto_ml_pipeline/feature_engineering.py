@@ -192,6 +192,17 @@ def build_preprocessor(
         len(col_types.text),
     )
 
+    logger.info(
+        "Preprocessor strategies: num_imputer=%s, cat_imputer=%s, scaler=%s, low_card_encoder=ohe, high_card_encoder=%s, datetime_feats=%s, time_feats=%s, text_handling=%s",
+        cfg.imputation.strategy_num,
+        cfg.imputation.strategy_cat,
+        cfg.scaling.strategy,
+        cfg.encoding.high_cardinality_encoder,
+        cfg.extract_datetime,
+        cfg.extract_time,
+        cfg.handle_text,
+    )
+
     transformers = []
 
     # Numeric pipeline
