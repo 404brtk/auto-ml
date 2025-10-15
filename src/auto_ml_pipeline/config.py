@@ -267,7 +267,7 @@ class EncodingConfig(BaseModel):
         default="ohe", description="Encoder to use for low cardinality features"
     )
     ohe_drop: Optional[Literal["first", "if_binary"]] = Field(
-        default="first", description="Whether to drop a category in OneHotEncoder"
+        default=None, description="Whether to drop a category in OneHotEncoder"
     )
     high_cardinality_number_threshold: int = Field(
         default=100,
