@@ -334,10 +334,10 @@ class FeatureEngineeringConfig(BaseModel):
         le=1.0,
         description=(
             "Threshold for sparse output in ColumnTransformer. "
-            "If the transformed data has a density (non-zero values) below this threshold, "
-            "output will be a sparse matrix. "
-            "Set to 0.0 to always output sparse if any transformer outputs sparse. "
-            "Set to 1.0 to always output dense arrays."
+            "If the overall density (proportion of non-zero values) "
+            "is LOWER than this threshold, output will be a sparse matrix. "
+            "Set to 0.0 to always output dense arrays. "
+            "Set to 1.0 to always output sparse matrices (if any transformer outputs sparse)."
         ),
     )
 
