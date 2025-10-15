@@ -292,12 +292,22 @@ class EncodingConfig(BaseModel):
     )
 
 
+class SkewConfig(BaseModel):
+    """Configuration for skewness correction."""
+
+    handle_skewness: bool = Field(
+        default=False,
+        description="Enable skewness correction for numeric features (yeo-johnson)",
+    )
+
+
 class FeatureEngineeringConfig(BaseModel):
     """Configuration for feature engineering operations."""
 
     imputation: ImputationConfig = Field(default_factory=ImputationConfig)
     scaling: ScalingConfig = Field(default_factory=ScalingConfig)
     encoding: EncodingConfig = Field(default_factory=EncodingConfig)
+    skew: SkewConfig = Field(default_factory=SkewConfig)
 
     # Feature extraction
     extract_datetime: bool = Field(

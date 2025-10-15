@@ -15,6 +15,7 @@ from sklearn.preprocessing import (
     TargetEncoder,
     FunctionTransformer,
     OrdinalEncoder,
+    PowerTransformer,
 )
 from sklearn.feature_extraction.text import TfidfVectorizer
 from auto_ml_pipeline.config import (
@@ -204,9 +205,10 @@ def build_preprocessor(
     )
 
     logger.info(
-        "Preprocessor strategies: num_imputer=%s, cat_imputer=%s, scaler=%s, low_card_encoder=%s, high_card_encoder=%s, datetime_feats=%s, time_feats=%s, text_handling=%s",
+        "Preprocessor strategies: num_imputer=%s, cat_imputer=%s, skew_correction=%s, scaler=%s, low_card_encoder=%s, high_card_encoder=%s, datetime_feats=%s, time_feats=%s, text_handling=%s",
         cfg.imputation.strategy_num,
         cfg.imputation.strategy_cat,
+        cfg.skew.handle_skewness,
         cfg.scaling.strategy,
         cfg.encoding.low_cardinality_encoder,
         cfg.encoding.high_cardinality_encoder,
@@ -219,19 +221,27 @@ def build_preprocessor(
 
     # Numeric pipeline
     if col_types.numeric:
-        numeric_pipeline = Pipeline(
-            [
-                (
-                    "imputer",
-                    get_numeric_imputer(
-                        strategy=cfg.imputation.strategy_num,
-                        knn_neighbors=cfg.imputation.knn_neighbors,
-                        random_sample_seed=cfg.imputation.random_sample_seed,
-                    ),
+        numeric_steps = [
+            (
+                "imputer",
+                get_numeric_imputer(
+                    strategy=cfg.imputation.strategy_num,
+                    knn_neighbors=cfg.imputation.knn_neighbors,
+                    random_sample_seed=cfg.imputation.random_sample_seed,
                 ),
-                ("scaler", get_scaler(cfg.scaling.strategy)),
-            ]
-        )
+            ),
+        ]
+        if cfg.skew.handle_skewness:
+            numeric_steps.append(
+                (
+                    "skew",
+                    PowerTransformer(method="yeo-johnson", standardize=False),
+                )
+            )
+
+        numeric_steps.append(("scaler", get_scaler(cfg.scaling.strategy)))
+
+        numeric_pipeline = Pipeline(numeric_steps)
         transformers.append(("numeric", numeric_pipeline, col_types.numeric))
 
     # Low cardinality categorical pipeline
