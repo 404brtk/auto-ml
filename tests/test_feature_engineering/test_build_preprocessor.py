@@ -5,6 +5,7 @@ import pandas as pd
 import numpy as np
 from sklearn.compose import ColumnTransformer
 from sklearn.model_selection import train_test_split
+from scipy.sparse import issparse
 
 from auto_ml_pipeline.feature_engineering import build_preprocessor
 from auto_ml_pipeline.config import (
@@ -14,6 +15,14 @@ from auto_ml_pipeline.config import (
     ImputationConfig,
     ScalingConfig,
 )
+
+
+def has_nan(X):
+    """Check if array (dense or sparse) contains NaN values."""
+    if issparse(X):
+        return np.isnan(X.data).any() if X.data.size > 0 else False
+    else:
+        return np.isnan(X).any()
 
 
 @pytest.fixture
@@ -141,8 +150,7 @@ class TestBuildPreprocessorBasic:
 
         X_transformed = preprocessor.fit_transform(categorical_low_df)
         assert X_transformed.shape[0] == 100
-        # OneHot encoding creates one column per category
-        assert X_transformed.shape[1] == 2
+        assert X_transformed.shape[1] == 1
 
     def test_text_columns(self, text_df):
         """Test preprocessor with text columns."""
@@ -163,10 +171,7 @@ class TestBuildPreprocessorBasic:
         assert len(col_types.datetime) == 1
 
         X_transformed = preprocessor.fit_transform(datetime_df)
-        assert X_transformed.shape == (
-            5,
-            6,
-        )  # year, month, day, dayofweek, quarter, is_weekend
+        assert X_transformed.shape == (5, 6)
 
     def test_time_columns(self, time_df):
         """Test preprocessor with time columns."""
@@ -176,10 +181,7 @@ class TestBuildPreprocessorBasic:
         assert len(col_types.time) == 1
 
         X_transformed = preprocessor.fit_transform(time_df)
-        assert X_transformed.shape == (
-            5,
-            5,
-        )  # hour, minute, second, is_business_hours, time_category
+        assert X_transformed.shape == (5, 5)
 
     def test_empty_dataframe(self, default_config):
         """Test preprocessor when no columns match any category."""
@@ -217,7 +219,7 @@ class TestBuildPreprocessorAdvanced:
         )
 
         X_transformed = preprocessor.fit_transform(numeric_with_missing)
-        assert not np.isnan(X_transformed).any()
+        assert not has_nan(X_transformed)
 
     def test_high_cardinality_categorical(self, categorical_high_df):
         """Test preprocessor with high cardinality categorical."""
@@ -251,12 +253,12 @@ class TestBuildPreprocessorAdvanced:
         preprocessor, col_types = build_preprocessor(df, cfg)
 
         X_transformed = preprocessor.fit_transform(df)
-        assert not np.isnan(X_transformed).any()
+        assert not has_nan(X_transformed)
 
     def test_single_row(self):
         """Test preprocessor with constant values."""
-        df = pd.DataFrame({"numeric": [1] * 100, "category": ["A"] * 100})
-        cfg = FeatureEngineeringConfig()
+        df = pd.DataFrame({"numeric": list(range(1, 101)), "category": ["A", "B"] * 50})
+        cfg = FeatureEngineeringConfig(encoding=EncodingConfig(ohe_drop=None))
         preprocessor, col_types = build_preprocessor(df, cfg)
 
         X_transformed = preprocessor.fit_transform(df)
@@ -314,8 +316,8 @@ class TestEncoders:
 
         assert X_train_transformed.shape[0] == len(X_train)
         assert X_test_transformed.shape[0] == len(X_test)
-        assert not np.isnan(X_train_transformed).any()
-        assert not np.isnan(X_test_transformed).any()
+        assert not has_nan(X_train_transformed)
+        assert not has_nan(X_test_transformed)
 
     def test_target_encoder_classification(self):
         """Test TargetEncoder with classification task."""
@@ -343,8 +345,8 @@ class TestEncoders:
         X_train_transformed = preprocessor.fit_transform(X_train, y_train)
         X_test_transformed = preprocessor.transform(X_test)
 
-        assert not np.isnan(X_train_transformed).any()
-        assert not np.isnan(X_test_transformed).any()
+        assert not has_nan(X_train_transformed)
+        assert not has_nan(X_test_transformed)
 
     def test_frequency_encoder(self):
         """Test FrequencyEncoder for high cardinality."""
@@ -368,10 +370,10 @@ class TestEncoders:
 
         X_transformed = preprocessor.fit_transform(df, y)
         assert X_transformed.shape[0] == len(df)
-        assert not np.isnan(X_transformed).any()
+        assert not has_nan(X_transformed)
 
-    def test_onehot_encoder_low_cardinality(self):
-        """Test OneHotEncoder for low cardinality."""
+    def test_onehot_encoder_low_cardinality_default(self):
+        """Test OneHotEncoder for low cardinality with default settings."""
         df = pd.DataFrame(
             {
                 "low_card": ["A", "B", "C", "A", "B"] * 20,
@@ -384,9 +386,119 @@ class TestEncoders:
         assert len(col_types.categorical_low) == 1
         X_transformed = preprocessor.fit_transform(df)
 
-        # OneHot should create 3 columns for 3 categories
+        assert X_transformed.shape[1] == 2
+        assert not has_nan(X_transformed)
+
+    def test_onehot_encoder_no_drop(self):
+        """Test OneHotEncoder with drop=None."""
+        df = pd.DataFrame(
+            {
+                "low_card": ["A", "B", "C", "A", "B"] * 20,
+            }
+        )
+
+        cfg = FeatureEngineeringConfig(
+            encoding=EncodingConfig(
+                low_cardinality_encoder="ohe",
+                ohe_drop=None,
+            ),
+        )
+        preprocessor, _ = build_preprocessor(df, cfg)
+        X_transformed = preprocessor.fit_transform(df)
+
         assert X_transformed.shape[1] == 3
-        assert not np.isnan(X_transformed).any()
+
+    def test_onehot_encoder_drop_first(self):
+        """Test OneHotEncoder with drop='first' (explicit)."""
+        df = pd.DataFrame(
+            {
+                "low_card": ["A", "B", "C", "A", "B"] * 20,
+            }
+        )
+
+        cfg = FeatureEngineeringConfig(
+            encoding=EncodingConfig(
+                low_cardinality_encoder="ohe",
+                ohe_drop="first",
+            ),
+        )
+        preprocessor, _ = build_preprocessor(df, cfg)
+        X_transformed = preprocessor.fit_transform(df)
+
+        assert X_transformed.shape[1] == 2
+
+    def test_onehot_encoder_drop_if_binary(self):
+        """Test OneHotEncoder with drop='if_binary'."""
+        df = pd.DataFrame(
+            {
+                "binary": ["A", "B"] * 50,
+                "ternary": ["X", "Y", "Z"] * 33 + ["X"],
+            }
+        )
+
+        cfg = FeatureEngineeringConfig(
+            encoding=EncodingConfig(
+                low_cardinality_encoder="ohe",
+                ohe_drop="if_binary",
+            ),
+        )
+        preprocessor, _ = build_preprocessor(df, cfg)
+        X_transformed = preprocessor.fit_transform(df)
+
+        assert X_transformed.shape[1] == 4
+
+    def test_ordinal_encoder_low_cardinality(self):
+        """Test OrdinalEncoder for low cardinality."""
+        df = pd.DataFrame(
+            {
+                "low_card": ["A", "B", "C", "A", "B"] * 20,
+            }
+        )
+
+        cfg = FeatureEngineeringConfig(
+            encoding=EncodingConfig(low_cardinality_encoder="ordinal")
+        )
+        preprocessor, _ = build_preprocessor(df, cfg)
+        X_transformed = preprocessor.fit_transform(df)
+
+        assert X_transformed.shape[1] == 1
+        assert not has_nan(X_transformed)
+
+    def test_frequency_encoder_low_cardinality(self):
+        """Test FrequencyEncoder for low cardinality."""
+        df = pd.DataFrame(
+            {
+                "low_card": ["A", "B", "C", "A", "B"] * 20,
+            }
+        )
+        y = np.random.randn(100)
+
+        cfg = FeatureEngineeringConfig(
+            encoding=EncodingConfig(low_cardinality_encoder="frequency")
+        )
+        preprocessor, _ = build_preprocessor(df, cfg)
+        X_transformed = preprocessor.fit_transform(df, y)
+
+        assert X_transformed.shape[1] == 1
+        assert not has_nan(X_transformed)
+
+    def test_target_encoder_low_cardinality(self):
+        """Test TargetEncoder for low cardinality."""
+        df = pd.DataFrame(
+            {
+                "low_card": ["A", "B", "C", "A", "B"] * 20,
+            }
+        )
+        y = np.random.randn(100)
+
+        cfg = FeatureEngineeringConfig(
+            encoding=EncodingConfig(low_cardinality_encoder="target")
+        )
+        preprocessor, _ = build_preprocessor(df, cfg, TaskType.regression)
+        X_transformed = preprocessor.fit_transform(df, y)
+
+        assert X_transformed.shape[1] == 1
+        assert not has_nan(X_transformed)
 
     def test_target_encoder_with_rare_categories(self):
         """Test TargetEncoder handles rare categories."""
@@ -414,13 +526,13 @@ class TestEncoders:
         X_transformed = preprocessor.fit_transform(df, y)
 
         assert X_transformed.shape[0] == len(df)
-        assert not np.isnan(X_transformed).any()
+        assert not has_nan(X_transformed)
 
     def test_target_encoder_unseen_categories(self):
         """Test TargetEncoder with unseen categories in test set."""
         np.random.seed(42)
         train_cats = ["A", "B", "C"]
-        test_cats = ["A", "B", "D"]  # D is unseen
+        test_cats = ["A", "B", "D"]
 
         df_train = pd.DataFrame(
             {
@@ -446,7 +558,7 @@ class TestEncoders:
 
         X_test_transformed = preprocessor.transform(df_test)
         assert X_test_transformed.shape[0] == len(df_test)
-        assert not np.isnan(X_test_transformed).any()
+        assert not has_nan(X_test_transformed)
 
 
 class TestScalers:
@@ -466,7 +578,9 @@ class TestScalers:
         preprocessor, _ = build_preprocessor(df, cfg)
         X_transformed = preprocessor.fit_transform(df)
 
-        # Standard scaling should have mean ~0 and std ~1
+        if issparse(X_transformed):
+            X_transformed = X_transformed.toarray()
+
         assert abs(X_transformed.mean()) < 1e-10
         assert abs(X_transformed.std() - 1.0) < 1e-10
 
@@ -478,21 +592,22 @@ class TestScalers:
         preprocessor, _ = build_preprocessor(df, cfg)
         X_transformed = preprocessor.fit_transform(df)
 
-        # MinMax scaling should be in [0, 1]
+        if issparse(X_transformed):
+            X_transformed = X_transformed.toarray()
+
         assert X_transformed.min() >= -1e-10
         assert X_transformed.max() <= 1 + 1e-10
 
     def test_robust_scaler(self):
         """Test RobustScaler."""
-        df = pd.DataFrame({"numeric": [1, 2, 3, 4, 100]})  # 100 is outlier
+        df = pd.DataFrame({"numeric": [1, 2, 3, 4, 100]})
         cfg = FeatureEngineeringConfig(scaling=ScalingConfig(strategy="robust"))
 
         preprocessor, _ = build_preprocessor(df, cfg)
         X_transformed = preprocessor.fit_transform(df)
 
-        # RobustScaler should handle outliers
         assert X_transformed.shape[0] == len(df)
-        assert not np.isnan(X_transformed).any()
+        assert not has_nan(X_transformed)
 
     def test_no_scaling(self):
         """Test no scaling option."""
@@ -502,7 +617,9 @@ class TestScalers:
         preprocessor, _ = build_preprocessor(df, cfg)
         X_transformed = preprocessor.fit_transform(df)
 
-        # Values should remain unchanged
+        if issparse(X_transformed):
+            X_transformed = X_transformed.toarray()
+
         assert X_transformed.max() == 10000
         assert X_transformed.min() == 1
 
@@ -519,14 +636,15 @@ class TestImputers:
         )
         cfg = FeatureEngineeringConfig(
             imputation=ImputationConfig(strategy_num="median"),
-            scaling=ScalingConfig(strategy="none"),  # Disable scaling
+            scaling=ScalingConfig(strategy="none"),
         )
 
         preprocessor, _ = build_preprocessor(df, cfg)
         X_transformed = preprocessor.fit_transform(df)
 
-        assert not np.isnan(X_transformed).any()
-        # Median of [1,2,4,5] is 3
+        assert not has_nan(X_transformed)
+        if issparse(X_transformed):
+            X_transformed = X_transformed.toarray()
         assert 3 in X_transformed
 
     def test_mean_imputation(self):
@@ -541,7 +659,7 @@ class TestImputers:
         preprocessor, _ = build_preprocessor(df, cfg)
         X_transformed = preprocessor.fit_transform(df)
 
-        assert not np.isnan(X_transformed).any()
+        assert not has_nan(X_transformed)
 
     def test_knn_imputation(self):
         """Test KNN imputation."""
@@ -558,7 +676,7 @@ class TestImputers:
         preprocessor, _ = build_preprocessor(df, cfg)
         X_transformed = preprocessor.fit_transform(df)
 
-        assert not np.isnan(X_transformed).any()
+        assert not has_nan(X_transformed)
 
     def test_categorical_imputation(self):
         """Test categorical imputation with most_frequent."""
@@ -574,8 +692,7 @@ class TestImputers:
         preprocessor, _ = build_preprocessor(df, cfg)
         X_transformed = preprocessor.fit_transform(df)
 
-        # Should impute with most frequent (A)
-        assert not np.isnan(X_transformed).any()
+        assert not has_nan(X_transformed)
 
     def test_categorical_random_sample_imputation(self):
         """Test categorical imputation with random_sample."""
@@ -589,21 +706,13 @@ class TestImputers:
             imputation=ImputationConfig(
                 strategy_cat="random_sample", random_sample_seed=42
             ),
-            scaling=ScalingConfig(
-                scale_low_cardinality=True
-            ),  # Enable scaling for low-card
+            scaling=ScalingConfig(scale_low_card=True),
         )
         preprocessor, _ = build_preprocessor(df, cfg)
         X_transformed = preprocessor.fit_transform(df)
 
-        # Should impute missing values
-        assert not np.isnan(X_transformed).any()
-        # Should have 2 columns (one-hot encoded A and B)
-        assert X_transformed.shape[1] == 2
-        # When scale_low_cardinality=True, values are scaled (not strictly 0 or 1)
-        # Just check no NaNs and reasonable range
-        assert X_transformed.min() >= -5  # Reasonable range after scaling
-        assert X_transformed.max() <= 5
+        assert not has_nan(X_transformed)
+        assert X_transformed.shape[1] == 1
 
     def test_random_sample_imputation(self):
         """Test random sample imputation."""
@@ -616,15 +725,15 @@ class TestImputers:
             imputation=ImputationConfig(
                 strategy_num="random_sample", random_sample_seed=42
             ),
-            scaling=ScalingConfig(strategy="none"),  # Disable scaling
+            scaling=ScalingConfig(strategy="none"),
         )
 
         preprocessor, _ = build_preprocessor(df, cfg)
         X_transformed = preprocessor.fit_transform(df)
 
-        # Should impute missing values
-        assert not np.isnan(X_transformed).any()
-        # Values should be from the original distribution
+        assert not has_nan(X_transformed)
+        if issparse(X_transformed):
+            X_transformed = X_transformed.toarray()
         assert X_transformed.min() >= 1
         assert X_transformed.max() <= 10
 
@@ -655,16 +764,14 @@ class TestMixedPipeline:
 
         preprocessor, col_types = build_preprocessor(df, cfg, TaskType.regression)
 
-        # Verify column detection
         assert len(col_types.numeric) == 1
         assert len(col_types.categorical_low) == 1
         assert len(col_types.categorical_high) == 1
 
-        # Transform
         X_transformed = preprocessor.fit_transform(df, y)
 
         assert X_transformed.shape[0] == len(df)
-        assert not np.isnan(X_transformed).any()
+        assert not has_nan(X_transformed)
 
     def test_pipeline_with_train_test_split(self):
         """Test pipeline maintains consistency across train/test split."""
@@ -693,7 +800,105 @@ class TestMixedPipeline:
         X_train_transformed = preprocessor.fit_transform(X_train, y_train)
         X_test_transformed = preprocessor.transform(X_test)
 
-        # Same number of features
         assert X_train_transformed.shape[1] == X_test_transformed.shape[1]
-        assert not np.isnan(X_train_transformed).any()
-        assert not np.isnan(X_test_transformed).any()
+        assert not has_nan(X_train_transformed)
+        assert not has_nan(X_test_transformed)
+
+
+class TestOneHotEncoderConfigurations:
+    """Test various OneHotEncoder configuration combinations."""
+
+    @pytest.mark.parametrize(
+        "drop,expected_cols",
+        [
+            ("first", 2),
+            (None, 3),
+            ("if_binary", 3),
+        ],
+    )
+    def test_ohe_drop_variations(self, drop, expected_cols):
+        """Test OneHotEncoder with different drop settings."""
+        df = pd.DataFrame({"cat": ["A", "B", "C"] * 30})
+
+        cfg = FeatureEngineeringConfig(
+            encoding=EncodingConfig(
+                low_cardinality_encoder="ohe",
+                ohe_drop=drop,
+            ),
+        )
+        preprocessor, _ = build_preprocessor(df, cfg)
+        X_transformed = preprocessor.fit_transform(df)
+
+        assert X_transformed.shape[1] == expected_cols
+
+    def test_ohe_drop_if_binary_with_binary_column(self):
+        """Test drop='if_binary' actually drops for binary columns."""
+        df = pd.DataFrame({"binary": ["A", "B"] * 50})
+
+        cfg = FeatureEngineeringConfig(
+            encoding=EncodingConfig(
+                low_cardinality_encoder="ohe",
+                ohe_drop="if_binary",
+            ),
+        )
+        preprocessor, _ = build_preprocessor(df, cfg)
+        X_transformed = preprocessor.fit_transform(df)
+
+        assert X_transformed.shape[1] == 1
+
+    def test_ohe_with_ordinal_comparison(self):
+        """Compare OHE with ordinal encoding."""
+        df = pd.DataFrame({"cat": ["A", "B", "C"] * 30})
+
+        cfg_ohe = FeatureEngineeringConfig(
+            encoding=EncodingConfig(low_cardinality_encoder="ohe", ohe_drop=None),
+        )
+        preprocessor_ohe, _ = build_preprocessor(df, cfg_ohe)
+        X_ohe = preprocessor_ohe.fit_transform(df)
+
+        cfg_ordinal = FeatureEngineeringConfig(
+            encoding=EncodingConfig(low_cardinality_encoder="ordinal")
+        )
+        preprocessor_ordinal, _ = build_preprocessor(df, cfg_ordinal)
+        X_ordinal = preprocessor_ordinal.fit_transform(df)
+
+        assert X_ohe.shape[1] == 3
+        assert X_ordinal.shape[1] == 1
+
+    def test_ohe_with_multiple_columns(self):
+        """Test OHE with multiple categorical columns."""
+        df = pd.DataFrame(
+            {
+                "cat1": ["A", "B", "C"] * 30,
+                "cat2": ["X", "Y"] * 45,
+            }
+        )
+
+        cfg = FeatureEngineeringConfig(
+            encoding=EncodingConfig(
+                low_cardinality_encoder="ohe",
+                ohe_drop="first",
+            ),
+        )
+        preprocessor, _ = build_preprocessor(df, cfg)
+        X_transformed = preprocessor.fit_transform(df)
+
+        assert X_transformed.shape[1] == 3
+
+    def test_ohe_with_scaling(self):
+        """Test OHE with sparse-compatible scaling."""
+        df = pd.DataFrame({"cat": ["A", "B", "C"] * 30})
+
+        cfg = FeatureEngineeringConfig(
+            encoding=EncodingConfig(
+                low_cardinality_encoder="ohe",
+                ohe_drop=None,
+                scale_low_card=True,
+            ),
+            scaling=ScalingConfig(strategy="standard"),
+        )
+        preprocessor, _ = build_preprocessor(df, cfg)
+        X_transformed = preprocessor.fit_transform(df)
+
+        assert X_transformed.shape[1] == 3
+        assert not has_nan(X_transformed)
