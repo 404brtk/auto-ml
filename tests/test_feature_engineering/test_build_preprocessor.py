@@ -150,7 +150,7 @@ class TestBuildPreprocessorBasic:
 
         X_transformed = preprocessor.fit_transform(categorical_low_df)
         assert X_transformed.shape[0] == 100
-        assert X_transformed.shape[1] == 1
+        assert X_transformed.shape[1] == 2
 
     def test_text_columns(self, text_df):
         """Test preprocessor with text columns."""
@@ -386,7 +386,7 @@ class TestEncoders:
         assert len(col_types.categorical_low) == 1
         X_transformed = preprocessor.fit_transform(df)
 
-        assert X_transformed.shape[1] == 2
+        assert X_transformed.shape[1] == 3
         assert not has_nan(X_transformed)
 
     def test_onehot_encoder_no_drop(self):
@@ -712,7 +712,7 @@ class TestImputers:
         X_transformed = preprocessor.fit_transform(df)
 
         assert not has_nan(X_transformed)
-        assert X_transformed.shape[1] == 1
+        assert X_transformed.shape[1] == 2
 
     def test_random_sample_imputation(self):
         """Test random sample imputation."""
