@@ -163,17 +163,27 @@ def get_categorical_imputer(
         return SimpleImputer(strategy="most_frequent")
 
 
-def get_scaler(strategy: str = "standard") -> Union[BaseEstimator, str]:
+def get_scaler(
+    strategy: str = "standard", sparse_compatible: bool = False
+) -> Union[BaseEstimator, str]:
     """Get appropriate scaler based on strategy."""
     if strategy in ["none", None]:
         return "passthrough"
     elif strategy == "standard":
+        if sparse_compatible:
+            return StandardScaler(with_mean=False)
         return StandardScaler()
     elif strategy == "minmax":
+        if sparse_compatible:
+            return MinMaxScaler()
         return MinMaxScaler()
     elif strategy == "robust":
+        if sparse_compatible:
+            return RobustScaler(with_centering=False)
         return RobustScaler()
     else:
+        if sparse_compatible:
+            return StandardScaler(with_mean=False)
         return StandardScaler()
 
 
@@ -269,7 +279,16 @@ def build_preprocessor(
 
         # Optional scaling for encoded features
         if cfg.encoding.scale_low_card:
-            steps.append(("scaler", get_scaler(cfg.scaling.strategy)))
+            # ohe produces sparse output, needs sparse-compatible scaler
+            sparse_compatible = cfg.encoding.low_cardinality_encoder == "ohe"
+            steps.append(
+                (
+                    "scaler",
+                    get_scaler(
+                        cfg.scaling.strategy, sparse_compatible=sparse_compatible
+                    ),
+                )
+            )
 
         cat_low_pipeline = Pipeline(steps)
         transformers.append(("cat_low", cat_low_pipeline, col_types.categorical_low))
