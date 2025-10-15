@@ -38,6 +38,12 @@ from auto_ml_pipeline.io_utils import make_run_dir, save_json, save_model
 from auto_ml_pipeline.logging_utils import get_logger
 from auto_ml_pipeline.task_inference import infer_task
 
+# suppress lightgbm feature names mismatch warning
+# pipeline transforms df to numpy arrays, triggering this warning
+# safe to ignore
+import warnings
+
+warnings.filterwarnings("ignore", message=".*does not have valid feature names.*")
 
 logger = get_logger(__name__)
 
@@ -148,7 +154,6 @@ def build_ml_pipeline(X: pd.DataFrame, cfg: PipelineConfig, model: Any) -> SkPip
     steps.append(("model", model))
 
     pipeline = SkPipeline(steps)
-    pipeline.set_output(transform="pandas")
 
     return pipeline
 
