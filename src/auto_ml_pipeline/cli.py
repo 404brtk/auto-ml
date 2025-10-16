@@ -15,7 +15,10 @@ app = typer.Typer(add_completion=True)
 def _load_data(path: Path) -> pd.DataFrame:
     suffix = path.suffix.lower()
     if suffix in {".csv"}:
-        return pd.read_csv(path)
+        try:
+            return pd.read_csv(path)
+        except UnicodeDecodeError:
+            return pd.read_csv(path, encoding="latin-1")
     if suffix in {".parquet"}:
         return pd.read_parquet(path)
     if suffix in {".feather"}:
