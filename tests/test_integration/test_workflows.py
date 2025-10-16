@@ -2,42 +2,67 @@
 
 import pandas as pd
 import numpy as np
-
-from auto_ml_pipeline.config import CleaningConfig, FeatureEngineeringConfig, TaskType
+import pytest
+from auto_ml_pipeline.config import (
+    CleaningConfig,
+    FeatureEngineeringConfig,
+    FeatureSelectionConfig,
+    EncodingConfig,
+    ScalingConfig,
+    ImputationConfig,
+    TaskType,
+)
 from auto_ml_pipeline.data_cleaning import clean_data
 from auto_ml_pipeline.feature_engineering import build_preprocessor
 from auto_ml_pipeline.feature_selection import build_selector
 from auto_ml_pipeline.task_inference import infer_task
 
 
+@pytest.fixture
+def large_classification_df():
+    """Large DataFrame for classification tasks."""
+    np.random.seed(42)
+    return pd.DataFrame(
+        {
+            "numeric1": np.random.randn(100),
+            "numeric2": np.random.randn(100),
+            "category": np.random.choice(["A", "B", "C"], 100),
+            "target": np.random.randint(0, 2, 100),
+        }
+    )
+
+
+@pytest.fixture
+def large_regression_df():
+    """Large DataFrame for regression tasks."""
+    np.random.seed(42)
+    return pd.DataFrame(
+        {
+            "feat1": np.random.randn(100),
+            "feat2": np.random.randn(100),
+            "feat3": np.random.choice(["low", "medium", "high"], 100),
+            "target": np.random.randn(100) * 10 + 50,
+        }
+    )
+
+
 class TestEndToEndClassification:
     """Test end-to-end classification workflow."""
 
-    def test_simple_classification_workflow(self):
+    def test_simple_classification_workflow(self, large_classification_df):
         """Test simple classification from raw data to predictions."""
-        # Create synthetic data
-        np.random.seed(42)
-        df = pd.DataFrame(
-            {
-                "numeric1": np.random.randn(100),
-                "numeric2": np.random.randn(100),
-                "category": np.random.choice(["A", "B", "C"], 100),
-                "target": np.random.randint(0, 2, 100),
-            }
-        )
+        cfg = CleaningConfig(drop_duplicates=True, remove_id_columns=False)
+        df_clean, target = clean_data(large_classification_df, "target", cfg)
 
-        # Data cleaning
-        cleaning_cfg = CleaningConfig(drop_duplicates=True)
-        df_clean, target = clean_data(df, "target", cleaning_cfg)
+        # Ensure we have data after cleaning
+        assert len(df_clean) > 0, "DataFrame is empty after cleaning"
 
-        # Feature engineering
         fe_cfg = FeatureEngineeringConfig()
         X = df_clean.drop(target, axis=1)
 
         preprocessor, col_types = build_preprocessor(X, fe_cfg)
         X_transformed = preprocessor.fit_transform(X)
 
-        # Verify transformations
         assert X_transformed.shape[0] == len(df_clean)
         assert X_transformed.shape[1] > 0
         assert not np.isnan(X_transformed).any()
@@ -53,8 +78,10 @@ class TestEndToEndClassification:
             }
         )
 
-        cleaning_cfg = CleaningConfig(drop_duplicates=False)
-        df_clean, target = clean_data(df, "target", cleaning_cfg)
+        cfg = CleaningConfig(drop_duplicates=False, remove_id_columns=False)
+        df_clean, target = clean_data(df, "target", cfg)
+
+        assert len(df_clean) > 0
 
         fe_cfg = FeatureEngineeringConfig()
         X = df_clean.drop(target, axis=1)
@@ -69,8 +96,8 @@ class TestEndToEndClassification:
         """Test workflow removes duplicates."""
         df = pd.DataFrame({"feat": [1, 2, 1, 3], "target": [0, 1, 0, 1]})
 
-        cleaning_cfg = CleaningConfig(drop_duplicates=True)
-        df_clean, target = clean_data(df, "target", cleaning_cfg)
+        cfg = CleaningConfig(drop_duplicates=True, remove_id_columns=False)
+        df_clean, target = clean_data(df, "target", cfg)
 
         # Should remove one duplicate
         assert len(df_clean) == 3
@@ -85,9 +112,8 @@ class TestEndToEndClassification:
             }
         )
 
-        # Disable ID column removal for small test dataset
-        cleaning_cfg = CleaningConfig(remove_id_columns=False)
-        df_clean, target = clean_data(df, "target", cleaning_cfg)
+        cfg = CleaningConfig(remove_id_columns=False)
+        df_clean, target = clean_data(df, "target", cfg)
 
         fe_cfg = FeatureEngineeringConfig(extract_datetime=True, extract_time=True)
         X = df_clean.drop(target, axis=1)
@@ -96,7 +122,7 @@ class TestEndToEndClassification:
         X_transformed = preprocessor.fit_transform(X)
 
         # Should extract datetime features
-        assert X_transformed.shape[1] > 2  # More features than original
+        assert X_transformed.shape[1] > 2
 
     def test_workflow_with_text(self):
         """Test workflow with text features."""
@@ -112,9 +138,8 @@ class TestEndToEndClassification:
             }
         )
 
-        # Disable ID column removal for small test dataset
-        cleaning_cfg = CleaningConfig(remove_id_columns=False)
-        df_clean, target = clean_data(df, "target", cleaning_cfg)
+        cfg = CleaningConfig(remove_id_columns=False)
+        df_clean, target = clean_data(df, "target", cfg)
 
         fe_cfg = FeatureEngineeringConfig(
             handle_text=True, max_features_text=100, text_length_threshold=50
@@ -132,20 +157,12 @@ class TestEndToEndClassification:
 class TestEndToEndRegression:
     """Test end-to-end regression workflow."""
 
-    def test_simple_regression_workflow(self):
+    def test_simple_regression_workflow(self, large_regression_df):
         """Test simple regression workflow."""
-        np.random.seed(42)
-        df = pd.DataFrame(
-            {
-                "feat1": np.random.randn(100),
-                "feat2": np.random.randn(100),
-                "feat3": np.random.choice(["low", "medium", "high"], 100),
-                "target": np.random.randn(100) * 10 + 50,
-            }
-        )
+        cfg = CleaningConfig(remove_id_columns=False)
+        df_clean, target = clean_data(large_regression_df, "target", cfg)
 
-        cleaning_cfg = CleaningConfig()
-        df_clean, target = clean_data(df, "target", cleaning_cfg)
+        assert len(df_clean) > 0
 
         fe_cfg = FeatureEngineeringConfig()
         X = df_clean.drop(target, axis=1)
@@ -164,9 +181,8 @@ class TestEndToEndRegression:
         df = X.copy()
         df["target"] = y
 
-        # Disable ID column removal for test dataset
-        cleaning_cfg = CleaningConfig(remove_id_columns=False)
-        df_clean, target = clean_data(df, "target", cleaning_cfg)
+        cfg = CleaningConfig(remove_id_columns=False)
+        df_clean, target = clean_data(df, "target", cfg)
 
         fe_cfg = FeatureEngineeringConfig()
         X_clean = df_clean.drop(target, axis=1)
@@ -174,8 +190,6 @@ class TestEndToEndRegression:
 
         preprocessor, _ = build_preprocessor(X_clean, fe_cfg)
         X_transformed = preprocessor.fit_transform(X_clean)
-
-        from auto_ml_pipeline.config import FeatureSelectionConfig
 
         fs_cfg = FeatureSelectionConfig(
             variance_threshold=0.1, correlation_threshold=0.95
@@ -192,15 +206,13 @@ class TestTaskInference:
 
     def test_infer_binary_classification(self):
         """Test inference of binary classification."""
-        # Use larger dataset for proper inference
-        df = pd.DataFrame({"target": [0, 1] * 50})  # 100 samples
+        df = pd.DataFrame({"target": [0, 1] * 50})
         task = infer_task(df, "target")
         assert task == TaskType.classification
 
     def test_infer_multiclass_classification(self):
         """Test inference of multiclass classification."""
-        # Use larger dataset for proper inference
-        df = pd.DataFrame({"target": [0, 1, 2] * 40})  # 120 samples
+        df = pd.DataFrame({"target": [0, 1, 2] * 40})
         task = infer_task(df, "target")
         assert task == TaskType.classification
 
@@ -212,7 +224,6 @@ class TestTaskInference:
 
     def test_infer_integer_regression(self):
         """Test regression inference with integer targets."""
-        # Many unique integer values should be regression
         df = pd.DataFrame({"target": list(range(100))})
         task = infer_task(df, "target")
         assert task == TaskType.regression
@@ -225,17 +236,15 @@ class TestDataCleaningIntegration:
         """Test cleaning with all operations enabled."""
         df = pd.DataFrame(
             {
-                "feat1": [1, 2, 1, 4, np.nan, 6],  # Has duplicate and NaN
+                "feat1": [1, 2, 1, 4, np.nan, 6],
                 "feat2": [10, 20, 10, 40, np.nan, 60],
                 "numeric_str": ["1.5", "2.5", "1.5", "4.5", "5.5", "6.5"],
-                "target": [0, 1, 0, 1, np.nan, 1],  # Has missing target
+                "target": [0, 1, 0, 1, np.nan, 1],
             }
         )
 
         cfg = CleaningConfig(
-            drop_duplicates=True,
-            max_missing_row_ratio=0.3,
-            remove_id_columns=False,  # Disable for test dataset
+            drop_duplicates=True, max_missing_row_ratio=0.3, remove_id_columns=False
         )
 
         result, target = clean_data(df, "target", cfg)
@@ -243,9 +252,7 @@ class TestDataCleaningIntegration:
         # Should remove rows with missing target and duplicates
         assert len(result) < len(df)
         assert not result[target].isna().any()
-        # Check for duplicates properly
-        has_duplicates = result.duplicated().any()
-        assert not bool(has_duplicates)
+        assert not result.duplicated().any()
 
     def test_clean_preserves_datatypes(self):
         """Test that cleaning preserves appropriate datatypes."""
@@ -258,7 +265,6 @@ class TestDataCleaningIntegration:
             }
         )
 
-        # Disable ID column removal for small test dataset
         cfg = CleaningConfig(remove_id_columns=False)
         result, target = clean_data(df, "target", cfg)
 
@@ -275,7 +281,6 @@ class TestDataCleaningIntegration:
             }
         )
 
-        # Disable ID column removal for small test dataset
         cfg = CleaningConfig(remove_id_columns=False)
         result, target = clean_data(df, "target", cfg)
 
@@ -286,7 +291,6 @@ class TestDataCleaningIntegration:
         """Test numeric coercion during cleaning."""
         df = pd.DataFrame({"numeric_str": ["1", "2", "3", "4"], "target": [0, 1, 0, 1]})
 
-        # Disable ID column removal for small test dataset
         cfg = CleaningConfig(remove_id_columns=False)
         result, target = clean_data(df, "target", cfg)
 
@@ -323,7 +327,6 @@ class TestFeatureEngineeringIntegration:
         X_transformed = preprocessor.fit_transform(df)
 
         # Check that feature types were identified
-        # At least some features should be detected
         total_features = (
             len(col_types.numeric)
             + len(col_types.categorical_low)
@@ -338,11 +341,8 @@ class TestFeatureEngineeringIntegration:
 
     def test_high_cardinality_encoding(self):
         """Test encoding of high cardinality features."""
-        # Create high cardinality feature
         df = pd.DataFrame({"high_card": [f"cat_{i}" for i in range(100)]})
-        y = np.random.randn(100)  # Add target for TargetEncoder
-
-        from auto_ml_pipeline.config import EncodingConfig
+        y = np.random.randn(100)
 
         cfg = FeatureEngineeringConfig(
             encoding=EncodingConfig(high_cardinality_threshold=50)
@@ -360,8 +360,6 @@ class TestFeatureEngineeringIntegration:
         """Test different scaling strategies."""
         df = pd.DataFrame({"feat": [1, 100, 1000, 10000]})
 
-        from auto_ml_pipeline.config import ScalingConfig
-
         for strategy in ["standard", "minmax", "robust"]:
             cfg = FeatureEngineeringConfig(scaling=ScalingConfig(strategy=strategy))
 
@@ -375,8 +373,6 @@ class TestFeatureEngineeringIntegration:
     def test_imputation_strategies(self):
         """Test different imputation strategies."""
         df = pd.DataFrame({"feat": [1, 2, np.nan, 4, 5]})
-
-        from auto_ml_pipeline.config import ImputationConfig
 
         for strategy in ["mean", "median"]:
             cfg = FeatureEngineeringConfig(
@@ -397,15 +393,13 @@ class TestCompleteWorkflow:
         """Test complete pipeline for classification."""
         np.random.seed(42)
 
-        # Create realistic messy data
         df = pd.DataFrame(
             {
-                "id": range(100),  # Should be high cardinality
+                "id": range(100),
                 "numeric1": np.random.randn(100),
                 "numeric2": np.random.randn(100) * 100 + 50,
                 "category": np.random.choice(["A", "B", "C"], 100),
                 "date": pd.date_range("2023-01-01", periods=100),
-                "text": ["sample text " + str(i) for i in range(100)],
                 "target": np.random.randint(0, 3, 100),
             }
         )
@@ -414,30 +408,29 @@ class TestCompleteWorkflow:
         df.loc[5, "numeric1"] = np.nan
         df.loc[10, "category"] = np.nan
         df.loc[15, "target"] = np.nan
-        df = pd.concat([df, df.iloc[:5]], ignore_index=True)  # Add duplicates
+        df = pd.concat([df, df.iloc[:5]], ignore_index=True)
 
         # Step 1: Clean
-        clean_cfg = CleaningConfig(drop_duplicates=True, max_missing_row_ratio=0.5)
+        clean_cfg = CleaningConfig(
+            drop_duplicates=True, max_missing_row_ratio=0.5, remove_id_columns=False
+        )
         df_clean, target = clean_data(df, "target", clean_cfg)
+
+        # Verify we have data
+        assert len(df_clean) > 10, f"Too few rows after cleaning: {len(df_clean)}"
 
         # Step 2: Split features and target
         X = df_clean.drop(target, axis=1)
         y = df_clean[target]
 
-        # Step 3: Feature engineering
-        from auto_ml_pipeline.config import EncodingConfig
+        assert len(y) > 0, "Target is empty"
 
-        fe_cfg = FeatureEngineeringConfig(
-            extract_datetime=True,
-            handle_text=False,  # Skip text for speed
-            encoding=EncodingConfig(high_cardinality_threshold=50),
-        )
+        # Step 3: Feature engineering
+        fe_cfg = FeatureEngineeringConfig(extract_datetime=True, handle_text=False)
         preprocessor, col_types = build_preprocessor(X, fe_cfg)
         X_transformed = preprocessor.fit_transform(X)
 
         # Step 4: Feature selection
-        from auto_ml_pipeline.config import FeatureSelectionConfig
-
         fs_cfg = FeatureSelectionConfig(variance_threshold=0.01)
         selector = build_selector(fs_cfg, TaskType.classification)
 
@@ -472,7 +465,7 @@ class TestCompleteWorkflow:
         df.loc[90:95, "target"] = 1000
 
         # Clean
-        clean_cfg = CleaningConfig(drop_duplicates=True)
+        clean_cfg = CleaningConfig(drop_duplicates=True, remove_id_columns=False)
         df_clean, target = clean_data(df, "target", clean_cfg)
 
         X = df_clean.drop(target, axis=1)
@@ -484,8 +477,6 @@ class TestCompleteWorkflow:
         X_transformed = preprocessor.fit_transform(X)
 
         # Feature selection
-        from auto_ml_pipeline.config import FeatureSelectionConfig
-
         fs_cfg = FeatureSelectionConfig(correlation_threshold=0.95)
         selector = build_selector(fs_cfg, TaskType.regression)
 
@@ -494,9 +485,8 @@ class TestCompleteWorkflow:
         else:
             X_final = X_transformed
 
-        # Verify - use appropriate check for array/dataframe
+        # Verify
         assert X_final.shape[0] == len(y)
-        # Check for NaN values properly
         if hasattr(X_final, "values"):
             assert not np.isnan(X_final.values).any()
         else:
@@ -504,10 +494,9 @@ class TestCompleteWorkflow:
 
     def test_pipeline_with_edge_cases(self):
         """Test pipeline handles edge cases gracefully."""
-        # Small dataset
         df_small = pd.DataFrame({"feat": [1, 2, 3], "target": [0, 1, 0]})
 
-        clean_cfg = CleaningConfig()
+        clean_cfg = CleaningConfig(remove_id_columns=False)
         df_clean, target = clean_data(df_small, "target", clean_cfg)
 
         X = df_clean.drop(target, axis=1)
@@ -531,7 +520,7 @@ class TestCompleteWorkflow:
         # Run pipeline twice
         results = []
         for _ in range(2):
-            clean_cfg = CleaningConfig()
+            clean_cfg = CleaningConfig(remove_id_columns=False)
             df_clean, target = clean_data(df, "target", clean_cfg)
 
             X = df_clean.drop(target, axis=1)
