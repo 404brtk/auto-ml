@@ -16,7 +16,7 @@ from sklearn.model_selection import (
     BaseCrossValidator,
 )
 from sklearn.pipeline import Pipeline as SkPipeline
-
+from sklearn.preprocessing import LabelEncoder
 
 from auto_ml_pipeline.config import PipelineConfig, TaskType
 from auto_ml_pipeline.data_cleaning import clean_data
@@ -380,6 +380,20 @@ def train(df: pd.DataFrame, target: str, cfg: PipelineConfig) -> TrainResult:
 
     logger.info("Train/test split: %s / %s", X_train.shape, X_test.shape)
 
+    # Encode target variable if non-numeric for classification
+    if task == TaskType.classification and not pd.api.types.is_numeric_dtype(y_train):
+        logger.info("Encoding non-numeric target: %s", sorted(y_train.unique()))
+
+        label_encoder = LabelEncoder()
+        y_train = pd.Series(label_encoder.fit_transform(y_train), index=y_train.index)
+        y_test = pd.Series(label_encoder.transform(y_test), index=y_test.index)
+
+        logger.info(
+            "Encoded to: %s", {cls: i for i, cls in enumerate(label_encoder.classes_)}
+        )
+    else:
+        label_encoder = None
+
     # Handle outliers
     if cfg.cleaning.outlier.strategy not in [None, "none"]:
         try:
@@ -613,6 +627,12 @@ def train(df: pd.DataFrame, target: str, cfg: PipelineConfig) -> TrainResult:
     try:
         save_model(best_pipeline, run_dir / "eval_model.joblib")
 
+        if label_encoder is not None:
+            save_model(label_encoder, run_dir / "label_encoder.joblib")
+            logger.info(
+                "Saved label encoder with classes: %s", label_encoder.classes_.tolist()
+            )
+
         if production_estimator is not None:
             save_model(production_estimator, run_dir / "production_model.joblib")
             logger.info("Saved both evaluation and production models")
@@ -634,6 +654,12 @@ def train(df: pd.DataFrame, target: str, cfg: PipelineConfig) -> TrainResult:
                     "production_model.joblib"
                     if production_estimator is not None
                     else None
+                ),
+                "label_encoder_file": (
+                    "label_encoder.joblib" if label_encoder else None
+                ),
+                "class_labels": (
+                    label_encoder.classes_.tolist() if label_encoder else None
                 ),
                 "failed_models": failed_models if failed_models else None,
             },
