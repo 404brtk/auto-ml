@@ -137,7 +137,7 @@ class CleaningConfig(BaseModel):
     # Pre-split cleaning (row-wise operations, no feature learning)
     drop_duplicates: bool = Field(default=True, description="Remove duplicate rows")
     max_missing_row_ratio: Optional[float] = Field(
-        default=0.5,
+        default=0.8,
         ge=0,
         le=1,
         description="Max missing ratio per row before dropping (0-1)",
@@ -159,11 +159,11 @@ class CleaningConfig(BaseModel):
     )
 
     remove_id_columns: bool = Field(
-        default=True,
+        default=False,
         description="Automatically remove columns with >id_column_threshold unique values (likely IDs)",
     )
     id_column_threshold: float = Field(
-        default=0.99,
+        default=1.0,
         ge=0.5,
         le=1.0,
         description="Uniqueness ratio threshold for ID column detection",
@@ -323,7 +323,7 @@ class FeatureEngineeringConfig(BaseModel):
         default=True, description="Extract features from time-only columns"
     )
     handle_text: bool = Field(
-        default=False, description="Enable text feature extraction"
+        default=True, description="Enable text feature extraction"
     )
     max_features_text: int = Field(
         default=2000, ge=100, le=10000, description="Maximum text features to extract"
