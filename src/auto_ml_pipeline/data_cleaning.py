@@ -340,6 +340,38 @@ def remove_high_missing_rows(
     return df_clean
 
 
+def remove_high_missing_features(
+    df: pd.DataFrame, target: str, max_missing_ratio: float
+) -> pd.DataFrame:
+    """Remove features with missing ratio above max_missing_ratio."""
+    if not (0 <= max_missing_ratio <= 1):
+        raise ValueError(f"max_missing_ratio must be in [0,1], got {max_missing_ratio}")
+
+    df_clean = df.copy()
+
+    missing_ratios = df_clean.isnull().sum() / len(df_clean)
+
+    features_to_remove = missing_ratios[
+        (missing_ratios > max_missing_ratio) & (missing_ratios.index != target)
+    ].index.tolist()
+
+    if features_to_remove:
+        df_clean = df_clean.drop(columns=features_to_remove)
+        logger.info(
+            "Removed %d features with >%.1f%% missing values: %s",
+            len(features_to_remove),
+            100 * max_missing_ratio,
+            ", ".join(features_to_remove[:5])
+            + (
+                f" ... (+{len(features_to_remove) - 5} more)"
+                if len(features_to_remove) > 5
+                else ""
+            ),
+        )
+
+    return df_clean
+
+
 def drop_duplicates(df: pd.DataFrame) -> pd.DataFrame:
     """Drop duplicate rows."""
     before = len(df)
@@ -495,15 +527,21 @@ def clean_data(df: pd.DataFrame, target: str, cfg: CleaningConfig) -> pd.DataFra
             result_df, target, cfg.max_missing_row_ratio
         )
 
-    # 12. Remove constant/quasi-constant features
+    # 12. Remove features with too many missing values
+    if cfg.max_missing_feature_ratio is not None:
+        result_df = remove_high_missing_features(
+            result_df, target, cfg.max_missing_feature_ratio
+        )
+
+    # 13. Remove constant/quasi-constant features
     if cfg.remove_constant_features:
         result_df = remove_constant_features(result_df, target, cfg.constant_tolerance)
 
-    # 13. Remove ID columns
+    # 14. Remove ID columns
     if cfg.remove_id_columns:
         result_df = remove_id_columns(result_df, target, cfg.id_column_threshold)
 
-    # 14. Validate dataset size after cleaning (raises error if insufficient)
+    # 15. Validate dataset size after cleaning (raises error if insufficient)
     validate_dataset_size(
         result_df,
         initial_shape,

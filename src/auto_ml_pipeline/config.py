@@ -142,6 +142,12 @@ class CleaningConfig(BaseModel):
         le=1,
         description="Max missing ratio per row before dropping (0-1)",
     )
+    max_missing_feature_ratio: Optional[float] = Field(
+        default=0.5,
+        ge=0,
+        le=1,
+        description="Max missing ratio per feature before dropping (0-1)",
+    )
     remove_constant_features: bool = Field(
         default=True, description="Remove constant/quasi-constant features (PRE-SPLIT)"
     )
