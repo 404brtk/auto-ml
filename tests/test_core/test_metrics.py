@@ -110,7 +110,7 @@ class TestMetricsRegistry:
 
         assert isinstance(names, set)
         assert "accuracy" in names
-        assert len(names) == 6  # 6 classification metrics
+        assert len(names) == 8  # 8 classification metrics
 
     def test_get_default_metrics(self):
         """Test getting default metrics."""
