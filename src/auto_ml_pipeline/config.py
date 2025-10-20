@@ -405,7 +405,7 @@ class OptimizationConfig(BaseModel):
         default=True, description="Enable hyperparameter optimization"
     )
     n_trials: int = Field(
-        default=1, ge=1, le=1000, description="Number of optimization trials"
+        default=2, ge=1, le=1000, description="Number of optimization trials"
     )
     timeout: Optional[int] = Field(
         default=None,
@@ -446,15 +446,15 @@ class MetricsConfig(BaseModel):
         description=(
             "Metric to optimize during cross-validation for classification tasks. "
             "Set to None to use recommended default (f1_macro). "
-            "Available: accuracy, precision_macro, recall_macro, f1_macro, f1_weighted, roc_auc"
+            "Available: accuracy, precision_macro, recall_macro, f1_macro, f1_weighted, roc_auc (binary only), roc_auc_macro (multiclass only), roc_auc_weighted (multiclass only)"
         ),
     )
     classification_evaluation_metrics: Optional[List[str]] = Field(
         default=["accuracy", "f1_macro", "precision_macro", "recall_macro"],
         description=(
             "Metrics to compute on test set for classification tasks. "
-            "Set to None to use recommended defaults [accuracy, f1_macro, precision_macro, recall_macro]. "
-            "Available: accuracy, precision_macro, recall_macro, f1_macro, f1_weighted, roc_auc"
+            "Set to None to use recommended defaults. "
+            "Available: accuracy, precision_macro, recall_macro, f1_macro, f1_weighted, roc_auc (binary only), roc_auc_macro (multiclass only), roc_auc_weighted (multiclass only)"
         ),
     )
     # Regression metrics
@@ -574,7 +574,7 @@ class ModelsConfig(BaseModel):
     """
 
     models: Optional[List[str]] = Field(
-        default=["xgboost"],
+        default=["xgboost", "lightgbm"],
         description="List of models to train (None or empty list = all available models)",
     )
     fixed_hyperparameters: Optional[Dict[str, Dict[str, Any]]] = Field(
@@ -606,6 +606,37 @@ class ModelsConfig(BaseModel):
         return v
 
 
+class ReportConfig(BaseModel):
+    """Configuration for the final training report."""
+
+    enabled: bool = Field(
+        default=True, description="Enable/disable final report generation"
+    )
+    include_shap: bool = Field(
+        default=True, description="Include SHAP analysis in the report (can be slow)"
+    )
+    include_permutation_importance: bool = Field(
+        default=True,
+        description="Include permutation importance in the report (can be slow)",
+    )
+    include_learning_curves: bool = Field(
+        default=True,
+        description="Include learning curves in the report (can be slow)",
+    )
+    shap_sample_size: int = Field(
+        default=100, ge=10, le=1000, description="Sample size for SHAP analysis"
+    )
+    permutation_importance_n_repeats: int = Field(
+        default=10,
+        ge=1,
+        le=50,
+        description="Number of repeats for permutation importance",
+    )
+    learning_curve_steps: int = Field(
+        default=10, ge=5, le=20, description="Number of steps for learning curve plot"
+    )
+
+
 class PipelineConfig(BaseModel):
     """Main configuration class for the AutoML pipeline."""
 
@@ -620,6 +651,7 @@ class PipelineConfig(BaseModel):
     metrics: MetricsConfig = Field(default_factory=MetricsConfig)
     io: IOConfig = Field(default_factory=IOConfig)
     models: ModelsConfig = Field(default_factory=ModelsConfig)
+    reporting: ReportConfig = Field(default_factory=ReportConfig)
 
     @model_validator(mode="after")
     def validate_config(self) -> "PipelineConfig":

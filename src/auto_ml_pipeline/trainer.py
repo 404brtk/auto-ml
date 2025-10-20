@@ -1,8 +1,9 @@
 import random
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, Optional, Union, List
 import difflib
+import time
 
 import numpy as np
 import pandas as pd
@@ -37,6 +38,7 @@ from auto_ml_pipeline.metrics import (
 from auto_ml_pipeline.io_utils import make_run_dir, save_json, save_model
 from auto_ml_pipeline.logging_utils import get_logger
 from auto_ml_pipeline.task_inference import infer_task
+from auto_ml_pipeline.reporting import ReportGenerator
 
 # suppress lightgbm feature names mismatch warning
 # pipeline transforms df to numpy arrays, triggering this warning
@@ -320,6 +322,8 @@ def optimize_model(
 
 def train(df: pd.DataFrame, target: str, cfg: PipelineConfig) -> TrainResult:
     """Train auto-ml pipeline and return best model."""
+    training_start = time.time()
+
     # Validate and match target column
     if target not in df.columns:
         case_matches = [col for col in df.columns if col.lower() == target.lower()]
@@ -473,6 +477,7 @@ def train(df: pd.DataFrame, target: str, cfg: PipelineConfig) -> TrainResult:
     best_pipeline = None
     best_params = {}
     failed_models = []
+    all_model_scores: List[Dict[str, Any]] = []
 
     for model_name, base_model in models.items():
         logger.info("Evaluating model: %s", model_name)
@@ -525,6 +530,8 @@ def train(df: pd.DataFrame, target: str, cfg: PipelineConfig) -> TrainResult:
                 params = fixed_hyperparams if fixed_hyperparams else {}
 
                 logger.info("Model %s CV score: %.4f", model_name, score)
+
+            all_model_scores.append({"model_name": model_name, "cv_score": score})
 
             if score > best_score:
                 best_score = score
@@ -624,6 +631,16 @@ def train(df: pd.DataFrame, target: str, cfg: PipelineConfig) -> TrainResult:
     run_dir = make_run_dir(cfg.io.output_dir)
     logger.info("Saving results to: %s", run_dir)
 
+    result = TrainResult(
+        run_dir=run_dir,
+        best_model_name=best_model_name,
+        best_score=best_score,
+        best_estimator=best_pipeline,
+        metrics=metrics,
+        best_params=best_params,
+        production_estimator=production_estimator,
+    )
+
     try:
         save_model(best_pipeline, run_dir / "eval_model.joblib")
 
@@ -665,16 +682,39 @@ def train(df: pd.DataFrame, target: str, cfg: PipelineConfig) -> TrainResult:
             },
             run_dir / "results.json",
         )
+
+        if cfg.reporting.enabled:
+            try:
+                logger.info("Generating training report...")
+                training_time = time.time() - training_start
+
+                report_generator = ReportGenerator(run_dir)
+                report_path = report_generator.generate_report(
+                    best_estimator=best_pipeline,
+                    X_train=X_train,
+                    X_test=X_test,
+                    y_train=y_train,
+                    y_test=y_test,
+                    y_pred=y_pred,
+                    y_proba=y_proba,
+                    task=task,
+                    best_model_name=best_model_name,
+                    best_params=best_params,
+                    cv_score=best_score,
+                    test_metrics=metrics,
+                    training_time=training_time,
+                    all_model_scores=all_model_scores,
+                    report_config=cfg.reporting,
+                    scorer_name=scorer_name,
+                    n_splits=cfg.split.n_splits,
+                    random_state=cfg.split.random_state,
+                )
+                logger.info(f"Training report available at: {report_path}")
+            except Exception as e:
+                logger.error(f"Failed to generate training report: {e}")
+
     except Exception as e:
         logger.error("Failed to save results: %s", e)
         raise
 
-    return TrainResult(
-        run_dir=run_dir,
-        best_model_name=best_model_name,
-        best_score=best_score,
-        best_estimator=best_pipeline,
-        metrics=metrics,
-        best_params=best_params,
-        production_estimator=production_estimator,
-    )
+    return result
