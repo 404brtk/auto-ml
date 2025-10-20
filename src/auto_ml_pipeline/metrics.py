@@ -87,6 +87,30 @@ class MetricsRegistry:
             compute_fn=lambda y_true, y_pred, y_proba=None: (
                 roc_auc_score(y_true, y_proba[:, 1])
                 if y_proba is not None and y_proba.shape[1] == 2
+                else None  # Explicitly for binary classification
+            ),
+            requires_proba=True,
+            higher_is_better=True,
+        ),
+        "roc_auc_macro": MetricDefinition(
+            name="roc_auc_macro",
+            display_name="ROC AUC (Macro)",
+            sklearn_scorer_name="roc_auc_ovr",
+            compute_fn=lambda y_true, y_pred, y_proba=None: (
+                roc_auc_score(y_true, y_proba, multi_class="ovr", average="macro")
+                if y_proba is not None and len(np.unique(y_true)) > 2
+                else None
+            ),
+            requires_proba=True,
+            higher_is_better=True,
+        ),
+        "roc_auc_weighted": MetricDefinition(
+            name="roc_auc_weighted",
+            display_name="ROC AUC (Weighted)",
+            sklearn_scorer_name="roc_auc_ovr_weighted",
+            compute_fn=lambda y_true, y_pred, y_proba=None: (
+                roc_auc_score(y_true, y_proba, multi_class="ovr", average="weighted")
+                if y_proba is not None and len(np.unique(y_true)) > 2
                 else None
             ),
             requires_proba=True,
