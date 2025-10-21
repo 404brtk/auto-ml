@@ -22,6 +22,8 @@ except ImportError:
     SHAP_AVAILABLE = False
     warnings.warn("SHAP not available.")
 
+from jinja2 import Environment, PackageLoader, select_autoescape
+
 from auto_ml_pipeline.config import TaskType, ReportConfig
 from auto_ml_pipeline.logging_utils import get_logger
 
@@ -57,7 +59,7 @@ class ReportGenerator:
             "summary": self._generate_summary(
                 best_model_name, cv_score, test_metrics, task, training_time
             ),
-            "model_comparison": self._generate_model_comparison_table(all_model_scores),
+            "model_comparison": self._generate_model_comparison_data(all_model_scores),
             "model_performance": self._generate_performance_plots(
                 y_test,
                 y_pred,
@@ -70,7 +72,7 @@ class ReportGenerator:
             "feature_importance": {},
             "explainability": {},
             "learning_curves": {},
-            "hyperparameters": self._format_hyperparameters(
+            "hyperparameters": self._prepare_hyperparameters(
                 best_params, best_model_name
             ),
             "data_info": self._generate_data_info(X_train, X_test),
@@ -104,7 +106,7 @@ class ReportGenerator:
                 random_state,
             )
 
-        html_path = self._create_html_report(sections, best_model_name, report_config)
+        html_path = self._create_html_report(sections, report_config)
         logger.info(f"HTML report generated: {html_path}")
 
         return html_path
@@ -645,24 +647,10 @@ class ReportGenerator:
             logger.warning(f"Learning curves generation failed: {e}")
         return {}
 
-    def _format_hyperparameters(
+    def _prepare_hyperparameters(
         self, params: Dict, model_name: Optional[str] = None
-    ) -> str:
-        if not params and not model_name:
-            return "<p>Default hyperparameters used</p>"
-
-        formatted = []
-
-        if model_name:
-            formatted.append(f"<li><strong>model</strong>: {model_name}</li>")
-
-        for key, value in sorted(params.items()):
-            formatted.append(f"<li><strong>{key}</strong>: {value}</li>")
-
-        if not formatted:
-            return "<p>Default hyperparameters used</p>"
-
-        return "<ul>" + "".join(formatted) + "</ul>"
+    ) -> Dict:
+        return {"model_name": model_name, "params": params if params else {}}
 
     def _generate_data_info(
         self,
@@ -676,356 +664,53 @@ class ReportGenerator:
             "train_test_ratio": f"{len(X_train)}:{len(X_test)}",
         }
 
-    def _generate_model_comparison_table(
+    def _generate_model_comparison_data(
         self, all_model_scores: List[Dict[str, Any]]
-    ) -> str:
+    ) -> List[Dict[str, Any]]:
         if not all_model_scores:
-            return "<p>No models were evaluated in this run.</p>"
-        sorted_scores = sorted(
-            all_model_scores, key=lambda x: x["cv_score"], reverse=True
+            return []
+
+        return sorted(all_model_scores, key=lambda x: x["cv_score"], reverse=True)
+
+    def _create_html_report(self, sections: Dict, report_config: ReportConfig) -> Path:
+        """Create HTML report using Jinja2 templating."""
+        env = Environment(
+            loader=PackageLoader("auto_ml_pipeline", "templates"),
+            autoescape=select_autoescape(["html", "xml"]),
+            trim_blocks=True,
+            lstrip_blocks=True,
         )
-        rows = "".join(
-            [
-                f"<tr><td>{item['model_name']}</td><td>{item['cv_score']:.4f}</td></tr>"
-                for item in sorted_scores
-            ]
-        )
-        return f'<table class="info-table"><thead><tr><th>Model</th><th>CV Score</th></tr></thead><tbody>{rows}</tbody></table>'
 
-    def _create_html_report(
-        self, sections: Dict, model_name: str, report_config: ReportConfig
-    ) -> Path:
-        import html
+        template = env.get_template("report_template.html")
 
-        safe_model_name = html.escape(sections["summary"]["model_name"])
-        safe_task = html.escape(sections["summary"]["task"])
+        feature_importance_config = {
+            "enabled": report_config.include_permutation_importance,
+            "plots": sections["feature_importance"].get("plots", []),
+        }
 
-        html_template = """
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>auto-ml training report</title>
-        <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
-        <link rel="preconnect" href="https://fonts.googleapis.com">
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-        <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-        <style>
-            * {{ margin: 0; padding: 0; box-sizing: border-box; }}
-            body {{
-                font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-                max-width: 1400px;
-                margin: 0 auto;
-                padding: 40px 20px;
-                background: #0f172a;
-                color: #e2e8f0;
-                line-height: 1.6;
-            }}
+        explainability_config = {
+            "enabled": report_config.include_shap,
+            "plots": sections["explainability"].get("plots", []),
+            "shap_available": SHAP_AVAILABLE,
+        }
 
-            .header {{
-                background: linear-gradient(135deg, #0d9488 0%, #06b6d4 100%);
-                padding: 48px 40px;
-                border-radius: 12px;
-                margin-bottom: 32px;
-                box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3);
-                border: 1px solid rgba(255, 255, 255, 0.1);
-            }}
-            .header h1 {{
-                font-size: 2.25em;
-                font-weight: 700;
-                letter-spacing: -0.025em;
-                margin-bottom: 8px;
-            }}
-            .timestamp {{
-                font-family: 'JetBrains Mono', monospace;
-                color: rgba(255, 255, 255, 0.8);
-                font-size: 0.875em;
-                font-weight: 500;
-            }}
+        learning_curves_config = {
+            "enabled": report_config.include_learning_curves,
+            "plot": sections["learning_curves"].get("plot", ""),
+        }
 
-            .section {{
-                background: #1e293b;
-                padding: 32px;
-                margin-bottom: 24px;
-                border-radius: 12px;
-                box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
-                border: 1px solid #334155;
-            }}
-            .section h2 {{
-                color: #06b6d4;
-                font-size: 1.5em;
-                font-weight: 600;
-                margin-bottom: 24px;
-                padding-bottom: 12px;
-                border-bottom: 2px solid #334155;
-                letter-spacing: -0.025em;
-            }}
-            .section h3 {{
-                color: #10b981;
-                font-size: 1.125em;
-                font-weight: 600;
-                margin: 28px 0 16px 0;
-            }}
-            .section p {{
-                color: #cbd5e1;
-                margin-bottom: 16px;
-                font-size: 0.9375em;
-            }}
-
-            .metric-grid {{
-                display: grid;
-                grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-                gap: 20px;
-                margin: 24px 0;
-            }}
-            .metric-card {{
-                background: linear-gradient(135deg, #334155 0%, #1e293b 100%);
-                padding: 24px;
-                border-radius: 8px;
-                border-left: 4px solid #0d9488;
-                transition: transform 0.2s ease, box-shadow 0.2s ease;
-            }}
-            .metric-card:hover {{
-                transform: translateY(-2px);
-                box-shadow: 0 8px 16px -4px rgba(0, 0, 0, 0.4);
-            }}
-            .metric-label {{
-                font-family: 'JetBrains Mono', monospace;
-                font-size: 0.75em;
-                color: #94a3b8;
-                text-transform: uppercase;
-                font-weight: 600;
-                letter-spacing: 0.05em;
-            }}
-            .metric-value {{
-                font-size: 1.875em;
-                color: #f1f5f9;
-                font-weight: 700;
-                margin-top: 8px;
-                word-break: break-word;
-            }}
-
-            .info-table {{
-                width: 100%;
-                border-collapse: collapse;
-                margin: 20px 0;
-                font-size: 0.9375em;
-            }}
-            .info-table th, .info-table td {{
-                padding: 16px;
-                text-align: left;
-                border-bottom: 1px solid #334155;
-            }}
-            .info-table th {{
-                background: #0d9488;
-                color: white;
-                font-weight: 600;
-                text-transform: uppercase;
-                font-size: 0.8125em;
-                letter-spacing: 0.05em;
-            }}
-            .info-table td {{
-                color: #e2e8f0;
-            }}
-            .info-table tr:hover {{
-                background: #2d3748;
-            }}
-
-            .footer {{
-                text-align: center;
-                color: #64748b;
-                margin-top: 48px;
-                padding: 32px;
-                border-top: 1px solid #334155;
-                font-size: 0.875em;
-            }}
-            .footer a {{
-                color: #06b6d4;
-                text-decoration: none;
-                font-weight: 500;
-                transition: color 0.2s ease;
-            }}
-            .footer a:hover {{
-                color: #10b981;
-            }}
-
-            ul {{
-                list-style-type: none;
-                padding: 0;
-            }}
-            ul li {{
-                padding: 12px 16px;
-                border-bottom: 1px solid #334155;
-                background: #2d3748;
-                margin-bottom: 4px;
-                border-radius: 4px;
-                font-size: 0.9375em;
-            }}
-            ul li strong {{
-                color: #06b6d4;
-                font-family: 'JetBrains Mono', monospace;
-                font-size: 0.9em;
-            }}
-
-            code {{
-                background: #0f172a;
-                padding: 3px 8px;
-                border-radius: 4px;
-                font-family: 'JetBrains Mono', monospace;
-                font-size: 0.875em;
-                color: #10b981;
-                border: 1px solid #334155;
-            }}
-        </style>
-    </head>
-    <body>
-        <div class="header">
-            <h1>auto-ml training report</h1>
-            <p class="timestamp">Generated {timestamp}</p>
-        </div>
-
-        <div class="section">
-            <h2>Executive Summary</h2>
-            <div class="metric-grid">
-                <div class="metric-card">
-                    <div class="metric-label">Best Model</div>
-                    <div class="metric-value">{model_name}</div>
-                </div>
-                <div class="metric-card">
-                    <div class="metric-label">Task Type</div>
-                    <div class="metric-value">{task}</div>
-                </div>
-                <div class="metric-card">
-                    <div class="metric-label">CV Score</div>
-                    <div class="metric-value">{cv_score}</div>
-                </div>
-                <div class="metric-card">
-                    <div class="metric-label">Training Time</div>
-                    <div class="metric-value">{training_time}</div>
-                </div>
-            </div>
-        </div>
-
-        <div class="section">
-            <h2>Model Comparison</h2>
-            <p>Cross-validation scores for all evaluated models, ranked by performance.</p>
-            {model_comparison_table}
-        </div>
-
-        <div class="section">
-            <h2>Test Set Metrics</h2>
-            <table class="info-table">
-                <thead>
-                    <tr><th>Metric</th><th>Value</th></tr>
-                </thead>
-                <tbody>
-                    {test_metrics_rows}
-                </tbody>
-            </table>
-        </div>
-
-        <div class="section">
-            <h2>Model Performance</h2>
-            {performance_plots}
-        </div>
-
-        <div class="section">
-            <h2>Feature Importance</h2>
-            <p>Analysis of which features contribute most to model predictions.</p>
-            {feature_importance_plots}
-        </div>
-
-        <div class="section">
-            <h2>Model Explainability</h2>
-            <p>SHAP values showing how each feature contributes to individual predictions.</p>
-            {explainability_plots}
-        </div>
-
-        <div class="section">
-            <h2>Learning Curves</h2>
-            {learning_curves_plot}
-        </div>
-
-        <div class="section">
-            <h2>Configuration</h2>
-            <h3>Hyperparameters</h3>
-            {hyperparameters}
-            <h3>Dataset</h3>
-            <table class="info-table">
-                <tr><th>Property</th><th>Value</th></tr>
-                <tr><td>Training Samples</td><td>{train_samples}</td></tr>
-                <tr><td>Test Samples</td><td>{test_samples}</td></tr>
-                <tr><td>Features</td><td>{n_features}</td></tr>
-                <tr><td>Train/Test Split</td><td>{train_test_ratio}</td></tr>
-            </table>
-        </div>
-
-        <div class="footer">
-            <p>auto-ml</p>
-            <p style="margin-top: 8px; font-size: 0.8125em;">
-                Made by <a href="https://github.com/404brtk" target="_blank">404brtk</a>
-            </p>
-        </div>
-    </body>
-    </html>
-        """
-
-        test_metrics_rows = "".join(
-            [
-                f"<tr><td>{html.escape(str(metric))}</td><td>{value:.4f}</td></tr>"
-                for metric, value in sections["summary"]["test_metrics"].items()
-            ]
-        )
-        performance_plots = "".join(sections["model_performance"])
-
-        feature_importance_plots = ""
-        if report_config.include_permutation_importance:
-            if sections["feature_importance"].get("plots"):
-                feature_importance_plots = "".join(
-                    sections["feature_importance"]["plots"]
-                )
-            else:
-                feature_importance_plots = "<p>Feature importance could not be calculated for this model type.</p>"
-        else:
-            feature_importance_plots = (
-                "<p>Feature importance analysis was disabled.</p>"
-            )
-
-        explainability_plots = ""
-        if report_config.include_shap:
-            if sections["explainability"].get("plots"):
-                explainability_plots = "".join(sections["explainability"]["plots"])
-            elif not SHAP_AVAILABLE:
-                explainability_plots = (
-                    "<p>SHAP not available. Install: <code>pip install shap</code></p>"
-                )
-            else:
-                explainability_plots = "<p>SHAP analysis failed.</p>"
-        else:
-            explainability_plots = "<p>SHAP analysis was disabled.</p>"
-
-        learning_curves_plot = ""
-        if report_config.include_learning_curves:
-            if sections["learning_curves"].get("plot"):
-                learning_curves_plot = sections["learning_curves"]["plot"]
-            else:
-                learning_curves_plot = "<p>Learning curves failed to generate.</p>"
-        else:
-            learning_curves_plot = "<p>Learning curves were disabled.</p>"
-
-        html_content = html_template.format(
-            model_name=safe_model_name,
+        html_content = template.render(
+            model_name=sections["summary"]["model_name"],
             timestamp=sections["summary"]["timestamp"],
-            task=safe_task,
+            task=sections["summary"]["task"],
             cv_score=sections["summary"]["cv_score"],
             training_time=sections["summary"]["training_time"],
-            model_comparison_table=sections["model_comparison"],
-            test_metrics_rows=test_metrics_rows,
-            performance_plots=performance_plots,
-            feature_importance_plots=feature_importance_plots,
-            explainability_plots=explainability_plots,
-            learning_curves_plot=learning_curves_plot,
+            model_scores=sections["model_comparison"],
+            test_metrics=sections["summary"]["test_metrics"],
+            performance_plots=sections["model_performance"],
+            feature_importance=feature_importance_config,
+            explainability=explainability_config,
+            learning_curves=learning_curves_config,
             hyperparameters=sections["hyperparameters"],
             train_samples=sections["data_info"]["train_samples"],
             test_samples=sections["data_info"]["test_samples"],
