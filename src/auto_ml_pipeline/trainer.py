@@ -689,7 +689,7 @@ def train(df: pd.DataFrame, target: str, cfg: PipelineConfig) -> TrainResult:
                 training_time = time.time() - training_start
 
                 report_generator = ReportGenerator(run_dir)
-                report_path = report_generator.generate_report(
+                report_generator.generate_report(
                     best_estimator=best_pipeline,
                     X_train=X_train,
                     X_test=X_test,
@@ -709,7 +709,7 @@ def train(df: pd.DataFrame, target: str, cfg: PipelineConfig) -> TrainResult:
                     n_splits=cfg.split.n_splits,
                     random_state=cfg.split.random_state,
                 )
-                logger.info(f"Training report available at: {report_path}")
+
             except Exception as e:
                 logger.error(f"Failed to generate training report: {e}")
 
