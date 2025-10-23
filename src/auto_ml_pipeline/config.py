@@ -579,7 +579,7 @@ class ModelsConfig(BaseModel):
     )
     fixed_hyperparameters: Optional[Dict[str, Dict[str, Any]]] = Field(
         default=None,
-        description="Fixed hyperparameters per model that won't be optimized. "
+        description="Fixed hyperparameters per model. If optimization is disabled, these are used to override the model's default settings. If optimization is enabled, these parameters are fixed and will not be optimized. "
         "Example: {'logistic': {'max_iter': 1000}, 'xgboost': {'n_estimators': 200}}",
     )
 
