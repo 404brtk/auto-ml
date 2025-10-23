@@ -1,19 +1,119 @@
-# Quick Start Configuration
-# Minimal configuration for getting started quickly
-# Use defaults for most settings, just customize key options
+# ==================================================================================
+# auto-ml - quick start configuration
+# ==================================================================================
+# This is a minimal configuration to get started quickly.
+# For a complete reference with all options, see default.yaml
+
+
+# ==================================================================================
+# TASK TYPE
+# ==================================================================================
+# Leave as null to auto-detect whether this is classification or regression
+task: null  # Options: "classification", "regression", or null
+
+
+# ==================================================================================
+# DATA SPLITTING
+# ==================================================================================
 split:
-  test_size: 0.2
-  random_state: 42
+  test_size: 0.2        # 20% of data for testing, 80% for training
+  random_state: 42      # For reproducible results
+  stratify: true        # Preserve class distribution in train/test split
+  n_splits: 5           # 5-fold cross-validation
 
+
+# ==================================================================================
+# DATA CLEANING
+# ==================================================================================
+cleaning:
+  # Basic cleaning options
+  drop_duplicates: true                   # Remove duplicate rows
+  max_missing_row_ratio: 0.8              # Drop rows with >80% missing values
+  max_missing_feature_ratio: 0.5          # Drop columns with >50% missing values
+  remove_constant_features: true          # Remove features with same value everywhere
+
+  # Outlier handling (optional - set strategy to "none" to disable)
+  outlier:
+    strategy: "none"    # Options: "iqr", "zscore", "isolation_forest", "none"
+    method: "remove"    # Options: "clip" or "remove"
+
+
+# ==================================================================================
+# FEATURE ENGINEERING
+# ==================================================================================
 features:
+  # How to fill missing values
   imputation:
-    strategy: "median"
+    strategy_cat: "most_frequent"  # For categorical: use most common value
+    strategy_num: "median"         # For numeric: use median value
+
+  # How to scale numeric features
   scaling:
-    strategy: "standard"
+    strategy: "standard"  # Options: "standard", "minmax", "robust", "none"
 
+  # How to encode categorical features
+  encoding:
+    low_cardinality_encoder: "ohe"     # One-Hot Encoding for low cardinality
+    high_cardinality_encoder: "target" # Target Encoding for high cardinality
+
+  # Feature extraction
+  extract_datetime: true  # Extract year, month, day, etc. from datetime columns
+  handle_text: true      # Set to true if you have text data (slower)
+
+
+# ==================================================================================
+# HYPERPARAMETER OPTIMIZATION
+# ==================================================================================
 optimization:
-  enabled: true
-  n_trials: 20
+  enabled: true           # Enable automatic hyperparameter tuning
+  n_trials: 50            # Number of optimization attempts per model
+  timeout: null           # No time limit (set to seconds if needed, e.g., 3600)
+  sampler: "tpe"          # Smart search algorithm (recommended)
+  pruner: "median"        # Stop unpromising trials early
 
+
+# ==================================================================================
+# EVALUATION METRICS
+# ==================================================================================
+metrics:
+  # Classification: optimize for balanced F1 score
+  classification_optimization_metric: "f1_macro"
+
+  # Regression: optimize for Root Mean Squared Error
+  regression_optimization_metric: "rmse"
+
+
+# ==================================================================================
+# INPUT/OUTPUT
+# ==================================================================================
+io:
+  dataset_path: null      # Set via command line: --dataset your_data.csv
+  target: null            # Set via command line: --target target_column_name
+  output_dir: "outputs"   # Where to save results
+
+
+# ==================================================================================
+# MODEL SELECTION
+# ==================================================================================
 models:
-  include: ["xgboost"]
+  # Train only XGBoost and LightGBM (fast and accurate)
+  models:
+    - "xgboost"
+    - "lightgbm"
+
+  # Optional: Fix specific hyperparameters.
+  # - If optimization is disabled, these values override the model's defaults.
+  # - If optimization is enabled, these parameters are held constant and are not tuned.
+  # fixed_hyperparameters:
+  #   xgboost:
+  #     n_estimators: 200
+
+
+# ==================================================================================
+# REPORTING
+# ==================================================================================
+reporting:
+  enabled: true                            # Generate final report
+  include_shap: true                       # Include SHAP feature importance
+  include_permutation_importance: true     # Include permutation importance
+  include_learning_curves: true            # Include learning curves

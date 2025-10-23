@@ -1,33 +1,111 @@
-# AutoML Pipeline Configuration
-# This YAML file contains all configuration options for the AutoML pipeline.
-# Comment/uncomment and modify values as needed.
+# ==================================================================================
+# auto-ml - default configuration
+# ==================================================================================
+# This file contains all available configuration options with their default values.
+# For a minimal quick-start configuration, see quickstart.yaml instead.
 
-# ML task type (auto-detected if not specified)
-# task: classification  # or "regression"
 
-# Data splitting configuration
+# ==================================================================================
+# TASK TYPE
+# ==================================================================================
+# Specifies the machine learning task type.
+# - classification: For categorical target variables (e.g. spam detection)
+# - regression: For continuous target variables (e.g. price prediction)
+# - null: Auto-detect based on target column characteristics (recommended)
+task: null  # Options: "classification", "regression", or null for auto-detection
+
+
+# ==================================================================================
+# DATA SPLITTING & CROSS-VALIDATION
+# ==================================================================================
 split:
-  test_size: 0.2          # Proportion of data for testing (0.1-0.9)
-  random_state: 42        # Random seed for reproducibility
-  stratify: true          # Stratify split based on target (recommended)
-  n_splits: 5             # Number of cross-validation folds (2-20)
+  # Proportion of dataset reserved for final testing (not used during training/optimization)
+  test_size: 0.2  # Range: 0.0-1.0 (0.2 = 20% test, 80% train)
 
-# Data cleaning configuration
+  # Random seed for reproducible train/test splits
+  # Set to null for non-reproducible (different split each run)
+  random_state: 42  # Any integer >= 0, or null
+
+  # Whether to preserve target class distribution in train/test splits
+  # Highly recommended for imbalanced datasets
+  stratify: true  # true = preserve class ratios, false = random split
+
+  # Number of folds for cross-validation during model training/optimization
+  # More folds = more robust evaluation but slower training
+  n_splits: 5  # Range: 2-20
+
+
+# ==================================================================================
+# DATA CLEANING
+# ==================================================================================
 cleaning:
-  # Pre-split cleaning (applied before train/test split)
-  drop_duplicates: true           # Remove duplicate rows
-  max_missing_row_ratio: 0.5      # Max missing ratio per row before dropping (0-1), null to disable
-  remove_constant_features: true  # Remove constant/quasi-constant features (PRE-SPLIT)
-  constant_tolerance: 1.0         # Threshold for constant features. 1.0 = only 100% constant, 0.95 = 95%+ same value
-  remove_id_columns: true         # Automatically remove columns with >95% unique values (likely IDs)
-  id_column_threshold: 0.95       # Uniqueness ratio threshold for ID column detection (0.5-1.0)
-  handle_mixed_types: "coerce"    # How to handle mixed type columns: "coerce" or "drop"
-  numeric_coercion_threshold: 0.9 # Minimum ratio of values that must be numeric-coercible for object columns (0-1)
-  uniqueness_ratio_threshold: 0.05 # Uniqueness ratio threshold for integer targets with high cardinality (0-1)
-  max_categories_absolute: 20     # Maximum unique values for automatic classification inference (2+)
-  min_rows_after_cleaning: 1      # Minimum rows required after cleaning (raises error if below)
-  min_cols_after_cleaning: 1      # Minimum columns required after cleaning (raises error if below)
-  special_null_values:            # List of string values to treat as null/missing values
+  # ---------------------------------------------------------------------------------
+  # Pre-Split Cleaning (applied BEFORE train/test split)
+  # ---------------------------------------------------------------------------------
+
+  # Remove exact duplicate rows from the dataset
+  drop_duplicates: true
+
+  # Maximum allowed proportion of missing values per ROW before removal
+  # Example: 0.8 means rows with >80% missing values are dropped
+  # Set to null to disable row-based missing value removal
+  max_missing_row_ratio: 0.8  # Range: 0.0-1.0, or null
+
+  # Maximum allowed proportion of missing values per FEATURE before removal
+  # Example: 0.5 means columns with >50% missing values are dropped
+  # Set to null to disable feature-based missing value removal
+  max_missing_feature_ratio: 0.5  # Range: 0.0-1.0, or null
+
+  # Remove features that have the same value across (almost) all rows
+  # Helps eliminate non-informative features
+  remove_constant_features: true
+
+  # Threshold for constant feature detection
+  # 1.0 = only remove 100% constant features
+  # 0.95 = remove features where 95%+ of values are identical
+  constant_tolerance: 1.0  # Range: 0.0-1.0
+
+  # Automatically detect and remove ID columns (columns with too many unique values)
+  # Useful for removing primary keys, UUIDs, etc.
+  remove_id_columns: false
+
+  # Uniqueness ratio threshold for ID column detection
+  # Columns with unique_values/total_rows > threshold are considered IDs
+  # Example: 1.0 means only columns with 100% unique values are removed
+  id_column_threshold: 1.0  # Range: 0.5-1.0
+
+  # How to handle columns with mixed data types (e.g., numbers mixed with text)
+  # - coerce: Attempt to convert to string and process as categorical
+  # - drop: Remove the entire column
+  handle_mixed_types: "coerce"  # Options: "coerce" or "drop"
+
+  # Minimum proportion of values that must be convertible to numbers for object columns
+  # Used when attempting to convert string columns to numeric
+  # Example: 0.9 means 90% of values must be numeric-like to convert
+  numeric_coercion_threshold: 0.9  # Range: 0.0-1.0
+
+  # Threshold for classifying integer targets with high cardinality
+  # If unique_values/sample_size < threshold, treat as classification
+  # Otherwise, treat as regression
+  # Example: 0.05 means if <5% of values are unique, it's classification
+  uniqueness_ratio_threshold: 0.05  # Range: 0.0-1.0
+
+  # Maximum unique values for automatic classification inference
+  # Integer targets with <= this many unique values are automatically classification
+  # Example: 20 means targets with 2-20 unique values are treated as classification
+  max_categories_absolute: 20  # Integer >= 2
+
+  # Minimum number of rows required after all cleaning operations
+  # Pipeline will raise an error if dataset becomes smaller than this
+  min_rows_after_cleaning: 1  # Integer >= 1
+
+  # Minimum number of columns required after all cleaning operations
+  # Pipeline will raise an error if dataset loses too many features
+  min_cols_after_cleaning: 1  # Integer >= 1
+
+  # Custom string values to treat as missing/null values during data loading
+  # These will be converted to NaN and handled by imputation
+  special_null_values:
     - "?"
     - "N/A"
     - "n/a"
@@ -48,85 +126,399 @@ cleaning:
     - ""
     - " "
 
-  # Outlier detection (learns parameters from training data)
-  # - clip: Caps outlier values to learned bounds (applied to train and test)
-  # - remove: Deletes outlier rows from training data only (test unchanged)
+  # ---------------------------------------------------------------------------------
+  # Outlier Detection & Handling (learns from TRAIN set, applies to train/test)
+  # ---------------------------------------------------------------------------------
   outlier:
-    strategy: "none"        # "iqr", "zscore", "isolation_forest", or "none" to disable
-    method: "remove"        # "clip" or "remove" detected outliers. NOTE: IsolationForest only supports 'remove' method.
-    # IQR parameters
-    iqr_multiplier: 1.5     # IQR multiplier for outlier detection (1.5 = standard, 3.0 = conservative)
-    # Z-score parameters
-    zscore_threshold: 3.0   # Z-score threshold for outlier detection
-    # IsolationForest parameters
-    contamination: "auto"   # Expected proportion of outliers for IsolationForest: (0, 0.5] or "auto"
-    n_estimators: 100       # Number of isolation trees (10-1000, more = more stable but slower)
-    max_samples: "auto"     # Samples per tree: "auto" = min(256, n), int for count, float (0,1] for fraction
-    random_state: null      # Random seed for IsolationForest reproducibility (null or int >= 0)
+    # Outlier detection method:
+    # - iqr: Interquartile Range method (classic, simple, robust)
+    # - zscore: Standard deviation method (assumes normal distribution)
+    # - isolation_forest: ML-based anomaly detection (powerful, handles complex patterns)
+    # - none: Disable outlier detection
+    strategy: "none"  # Options: "iqr", "zscore", "isolation_forest", "none"
 
-# Feature engineering configuration
+    # How to handle detected outliers:
+    # - clip: Cap outlier values to learned bounds (applied to both train and test)
+    # - remove: Delete outlier rows from training data only (test data unchanged)
+    # NOTE: isolation_forest ONLY supports "remove" method
+    method: "remove"  # Options: "clip" or "remove"
+
+    # --- IQR Method Parameters ---
+    # Multiplier for IQR to define outlier boundaries
+    # Lower bound = Q1 - (iqr_multiplier * IQR)
+    # Upper bound = Q3 + (iqr_multiplier * IQR)
+    # 1.5 = standard (aggressive), 3.0 = conservative (keeps more data)
+    iqr_multiplier: 3.0  # Typically: 1.5 or 3.0
+
+    # --- Z-Score Method Parameters ---
+    # Number of standard deviations from mean to consider as outlier
+    # Common values: 2.5 (aggressive), 3.0 (standard), 3.5 (conservative)
+    zscore_threshold: 3.0  # Typically: 2.5-3.5
+
+    # --- Isolation Forest Parameters ---
+    # Expected proportion of outliers in the dataset
+    # - "auto": Automatically determined by algorithm
+    # - float: Explicit proportion (e.g., 0.1 = expect 10% outliers)
+    contamination: "auto"  # Options: "auto" or float in range (0.0, 0.5]
+
+    # Number of isolation trees in the forest
+    # More trees = more stable detection but slower
+    n_estimators: 100  # Range: 10-1000 (100-200 is typical)
+
+    # Number of samples to train each tree
+    # - "auto": Uses min(256, n_samples)
+    # - int: Absolute number of samples
+    # - float: Fraction of total samples (0.0-1.0]
+    max_samples: "auto"  # Options: "auto", integer > 0, or float (0.0, 1.0]
+
+    # Random seed for Isolation Forest reproducibility
+    random_state: null  # Any integer >= 0, or null for non-reproducible
+
+
+# ==================================================================================
+# FEATURE ENGINEERING
+# ==================================================================================
 features:
-  # Missing value imputation
+  # ---------------------------------------------------------------------------------
+  # Missing Value Imputation
+  # ---------------------------------------------------------------------------------
   imputation:
-    strategy_cat: "most_frequent" # "most_frequent" or "random_sample" for categorical features
-    strategy_num: "median"        # "mean", "median", "knn", or "random_sample" for numeric features
-    knn_neighbors: 5              # Number of neighbors for KNN imputation (1-20)
-    random_sample_seed: 42        # Random seed for random_sample imputation (null for non-reproducible)
+    # Strategy for imputing missing categorical features
+    # - most_frequent: Fill with the most common category (mode)
+    # - random_sample: Randomly sample from observed values
+    strategy_cat: "most_frequent"  # Options: "most_frequent" or "random_sample"
 
-  # Feature scaling
+    # Strategy for imputing missing numeric features
+    # - mean: Fill with average value (sensitive to outliers)
+    # - median: Fill with middle value (robust to outliers, recommended)
+    # - knn: Use K-Nearest Neighbors to estimate missing values (slower but more accurate)
+    # - random_sample: Randomly sample from observed values
+    strategy_num: "median"  # Options: "mean", "median", "knn", "random_sample"
+
+    # Number of nearest neighbors to use for KNN imputation
+    # Only relevant if strategy_num = "knn"
+    knn_neighbors: 5  # Range: 1-20 (5-10 is typical)
+
+    # Random seed for random_sample imputation
+    # Ensures reproducibility when using random_sample strategy
+    random_sample_seed: 42  # Any integer, or null for non-reproducible
+
+  # ---------------------------------------------------------------------------------
+  # Feature Scaling (Normalization/Standardization)
+  # ---------------------------------------------------------------------------------
   scaling:
-    strategy: "standard"  # "standard", "minmax", "robust", or "none"
+    # Scaling method for numeric features
+    # - standard: Standardize to mean=0, std=1 (assumes normal distribution, works well with most models)
+    # - minmax: Scale to range [0, 1] (preserves original distribution shape)
+    # - robust: Scale using median and IQR (robust to outliers)
+    # - none: No scaling (preferably only for tree-based models)
+    strategy: "standard"  # Options: "standard", "minmax", "robust", "none"
 
-  # Categorical encoding
+  # ---------------------------------------------------------------------------------
+  # Categorical Encoding
+  # ---------------------------------------------------------------------------------
   encoding:
-    high_cardinality_number_threshold: 100  # Number of unique values to consider high cardinality (2-1000)
-    high_cardinality_pct_threshold: 0.1     # Percentage of unique values to consider high cardinality (0-1)
-    high_cardinality_encoder: "target"      # Encoder for high cardinality: "target" or "frequency"
-    scale_high_card: false                  # Apply scaling to high cardinality encoded features
+    # Encoder for LOW cardinality categorical features (few unique values)
+    # - ohe: One-Hot Encoding (creates binary columns for each category)
+    # - ordinal: Ordinal Encoding (assigns integer to each category)
+    # - target: Target Encoding (encodes by mean target value per category)
+    # - frequency: Frequency Encoding (encodes by category occurrence frequency)
+    low_cardinality_encoder: "ohe"  # Options: "ohe", "ordinal", "target", "frequency"
 
-  # Feature extraction
-  extract_datetime: true   # Extract features from datetime columns
-  extract_time: true       # Extract features from time-only columns
-  handle_text: false       # Enable text feature extraction (resource intensive)
-  max_features_text: 2000  # Maximum text features to extract (100-10000)
-  text_length_threshold: 50  # Minimum text length for feature extraction (10-500)
+    # Whether to drop a category in One-Hot Encoding to avoid multicollinearity
+    # - null: Keep all categories
+    # - first: Drop the first category
+    # - if_binary: Drop one category only for binary features
+    ohe_drop: null  # Options: null, "first", "if_binary"
 
-# Feature selection configuration
+    # Absolute number threshold: features with more unique values are HIGH cardinality
+    high_cardinality_number_threshold: 100  # Range: 2-1000
+
+    # Percentage threshold: features with unique_values/total_rows > threshold are HIGH cardinality
+    # Example: 0.1 means if >10% of values are unique, it's high cardinality
+    high_cardinality_pct_threshold: 0.1  # Range: 0.0-1.0
+
+    # Encoder for HIGH cardinality categorical features (many unique values)
+    # - target: Target Encoding (recommended, compact representation)
+    # - frequency: Frequency Encoding (based on occurrence counts)
+    # Note: One-Hot Encoding is NOT recommended for high cardinality (creates too many features)
+    high_cardinality_encoder: "target"  # Options: "target", "frequency"
+
+    # Whether to apply scaling to low cardinality encoded features
+    scale_low_card: true
+
+    # Whether to apply scaling to high cardinality encoded features
+    scale_high_card: true
+
+  # ---------------------------------------------------------------------------------
+  # Skewness Correction
+  # ---------------------------------------------------------------------------------
+  skew:
+    # Apply Yeo-Johnson power transformation to reduce skewness in numeric features
+    # Useful for making distributions more normal (benefits linear models)
+    # Can be computationally expensive for large datasets
+    handle_skewness: false
+
+  # ---------------------------------------------------------------------------------
+  # Feature Extraction
+  # ---------------------------------------------------------------------------------
+
+  # Extract engineered features from datetime columns
+  # Creates features like: year, month, day, day_of_week, hour, is_weekend, etc.
+  extract_datetime: true
+
+  # Extract engineered features from time-only columns
+  # Creates features like: hour, minute, second, time_of_day, etc.
+  extract_time: true
+
+  # Enable text feature extraction using TF-IDF (Term Frequency-Inverse Document Frequency)
+  # WARNING: Can be memory-intensive for large text datasets
+  handle_text: true
+
+  # Maximum number of text features to extract from text columns
+  # Higher values = more detailed text representation but more memory/computation
+  max_features_text: 2000  # Range: 100-10000
+
+  # Minimum text length (in characters) to consider for feature extraction
+  # Shorter text is treated as categorical instead of text
+  text_length_threshold: 50  # Range: 10-500
+
+  # Threshold for sparse matrix output in ColumnTransformer
+  # If overall density < threshold, output will be sparse (memory efficient)
+  # 0.0 = always dense, 1.0 = always sparse (if any transformer outputs sparse)
+  sparse_threshold: 0.3  # Range: 0.0-1.0
+
+
+# ==================================================================================
+# FEATURE SELECTION
+# ==================================================================================
+# Optional methods to reduce feature dimensionality and improve model performance
 selection:
-  # Variance-based selection
-  variance_threshold: null  # Remove features with variance below threshold (>= 0), null to disable
+  # ---------------------------------------------------------------------------------
+  # Variance-Based Selection
+  # ---------------------------------------------------------------------------------
+  # Remove features with variance below threshold (low-information features)
+  # Set to null to disable
+  variance_threshold: null  # Float >= 0, or null
 
-  # Correlation-based selection
-  correlation_threshold: null  # Remove features with correlation above threshold (0-1), null to disable
-  correlation_method: "pearson" # Correlation method: "pearson", "spearman", or "kendall"
+  # ---------------------------------------------------------------------------------
+  # Correlation-Based Selection
+  # ---------------------------------------------------------------------------------
+  # Remove one of each pair of features with correlation above threshold
+  # Helps eliminate redundant features
+  # Set to null to disable
+  correlation_threshold: null  # Float in range (0.0, 1.0), or null
 
-  # Univariate selection using mutual information
-  mutual_info_k: null       # Select top K features using mutual information (> 0), null to disable
+  # Method for computing correlation
+  # - pearson: Linear correlation (assumes linear relationships)
+  # - spearman: Rank correlation (detects monotonic relationships)
+  # - kendall: Rank correlation (robust but slower)
+  correlation_method: "pearson"  # Options: "pearson", "spearman", "kendall"
 
-  # Dimensionality reduction with PCA
-  pca_components: null      # Number of components (int > 0) or variance ratio (0-1), null to disable
+  # ---------------------------------------------------------------------------------
+  # Univariate Feature Selection
+  # ---------------------------------------------------------------------------------
+  # Select top K features using mutual information (measures dependency between features and target)
+  # Set to null to disable
+  mutual_info_k: null  # Integer > 0, or null
 
-# Hyperparameter optimization configuration
+  # ---------------------------------------------------------------------------------
+  # Dimensionality Reduction (PCA)
+  # ---------------------------------------------------------------------------------
+  # Principal Component Analysis for dimensionality reduction
+  # - int: Number of components to keep (e.g., 50 = keep 50 principal components)
+  # - float: Fraction of variance to preserve (e.g., 0.95 = keep 95% of variance)
+  # Set to null to disable
+  pca_components: null  # Integer > 0, float (0.0, 1.0], or null
+
+
+# ==================================================================================
+# HYPERPARAMETER OPTIMIZATION
+# ==================================================================================
 optimization:
-  enabled: true            # Enable hyperparameter optimization
-  n_trials: 50             # Number of optimization trials (1-1000)
-  timeout: 3600            # Timeout in seconds (>= 60), null for no limit
-  retrain_on_full_data: true  # Retrain best model on full dataset (train + test) for production
-  sampler: "tpe"           # Sampler algorithm: "tpe", "random", or "cmaes"
-  pruner: "median"         # Pruner for early stopping: "median", "successive_halving", "hyperband", or "none"
-  pruner_startup_trials: 5 # Number of trials before pruning starts (0-20)
+  # Enable/disable hyperparameter optimization using Optuna
+  # If disabled, models use default hyperparameters
+  enabled: true
 
-# Model evaluation configuration
-eval:
-  metrics: null            # Custom metrics list (null = use task-appropriate defaults)
+  # Number of optimization trials (iterations) per model
+  # More trials = better chance of finding optimal hyperparameters but slower
+  n_trials: 2  # Range: 1-1000 (50-200 is typical)
 
-# Input/Output configuration
+  # Maximum time (in seconds) for optimization per model
+  # Set to null for no time limit (only n_trials limit applies)
+  timeout: null  # Integer >= 60, or null
+
+  # Whether to retrain the best model on combined train+test data after evaluation
+  # Recommended for production deployment (uses all available data)
+  retrain_on_full_data: true
+
+  # Optuna sampler algorithm for hyperparameter search
+  # - tpe: Tree-structured Parzen Estimator (recommended, intelligent search)
+  # - random: Random search (baseline, good for comparison)
+  # - cmaes: Covariance Matrix Adaptation Evolution Strategy (good for continuous params)
+  sampler: "tpe"  # Options: "tpe", "random", "cmaes"
+
+  # Optuna pruner for early stopping of unpromising trials
+  # - median: Stop trial if below median of previous trials (recommended)
+  # - successive_halving: Aggressively prune bottom 50% each round
+  # - hyperband: Advanced successive halving with multiple brackets
+  # - none: No pruning (evaluate all trials fully)
+  pruner: "median"  # Options: "median", "successive_halving", "hyperband", "none"
+
+  # Number of trials to complete before pruning starts
+  # Allows initial exploration before pruning kicks in
+  pruner_startup_trials: 5  # Range: 0-20
+
+  # Random seed for Optuna sampler reproducibility
+  # Set to null for non-reproducible optimization
+  optuna_random_seed: null  # Any integer >= 0, or null
+
+
+# ==================================================================================
+# EVALUATION METRICS
+# ==================================================================================
+metrics:
+  # ---------------------------------------------------------------------------------
+  # Classification Metrics
+  # ---------------------------------------------------------------------------------
+
+  # Primary metric for model optimization during cross-validation (classification)
+  # The model selection is based on this metric
+  # Options: accuracy, precision_macro, recall_macro, f1_macro, f1_weighted,
+  #          roc_auc (binary only), roc_auc_macro (multiclass), roc_auc_weighted (multiclass)
+  # Set to null to use recommended default (f1_macro)
+  classification_optimization_metric: "f1_macro"
+
+  # Metrics to compute on test set for classification evaluation
+  # These are reported in final results but don't affect model selection
+  # Set to null to use recommended defaults
+  classification_evaluation_metrics:
+    - "accuracy"
+    - "f1_macro"
+    - "precision_macro"
+    - "recall_macro"
+
+  # ---------------------------------------------------------------------------------
+  # Regression Metrics
+  # ---------------------------------------------------------------------------------
+
+  # Primary metric for model optimization during cross-validation (regression)
+  # The model selection is based on this metric
+  # Options: rmse, mse, mae, mape, r2
+  # Set to null to use recommended default (rmse)
+  regression_optimization_metric: "rmse"
+
+  # Metrics to compute on test set for regression evaluation
+  # These are reported in final results but don't affect model selection
+  # Set to null to use recommended defaults
+  regression_evaluation_metrics:
+    - "rmse"
+    - "mae"
+    - "r2"
+
+
+# ==================================================================================
+# INPUT/OUTPUT CONFIGURATION
+# ==================================================================================
 io:
-  dataset_path: null       # Path to input dataset (typically set via CLI)
-  target: null             # Target column name (typically set via CLI)
-  output_dir: "outputs"    # Directory for output files
+  # Path to input dataset file
+  # Typically set via command line argument (--dataset)
+  # Supports: CSV, Excel, JSON, Parquet, and other pandas-compatible formats
+  dataset_path: null
 
-# Model selection configuration
+  # Name of the target column (variable to predict)
+  # Typically set via command line argument (--target)
+  target: null
+
+  # Directory where all output files will be saved
+  # Creates subdirectories for models, reports, plots, etc.
+  output_dir: "outputs"
+
+
+# ==================================================================================
+# MODEL SELECTION
+# ==================================================================================
 models:
-  include: ["xgboost"]     # Specific models to include (null = all available models)
-  exclude: null            # Models to exclude from training (null = none excluded)
+  # List of specific models to train
+  # Set to null or empty list [] to train ALL available models
+  #
+  # Available models (work for both classification and regression unless noted):
+  #
+  # Linear Models:
+  #   - "logistic": Logistic Regression (classification only)
+  #   - "linear": Linear Regression (regression only)
+  #   - "ridge": Ridge Regression/Classifier
+  #   - "lasso": Lasso Regression (regression only)
+  #   - "elastic_net": ElasticNet (regression only)
+  #   - "sgd": Stochastic Gradient Descent
+  #
+  # Probabilistic Models:
+  #   - "naive_bayes": Gaussian Naive Bayes (classification only)
+  #
+  # Instance-Based Models:
+  #   - "knn": K-Nearest Neighbors
+  #   - "svm": Support Vector Machine
+  #
+  # Tree-Based Models:
+  #   Single Tree:
+  #     - "decision_tree": Decision Tree
+  #   Bagging (parallel):
+  #     - "random_forest": Random Forest
+  #     - "extra_trees": Extra Trees
+  #   Boosting (sequential):
+  #     - "gradient_boosting": Gradient Boosting
+  #     - "hist_gradient_boosting": Histogram-based Gradient Boosting
+  #     - "adaboost": AdaBoost
+  #     - "xgboost": XGBoost
+  #     - "lightgbm": LightGBM
+  #     - "catboost": CatBoost
+  models:
+    - "xgboost"
+    - "lightgbm"
+
+  # Fixed hyperparameters for specific models.
+  # - If optimization is disabled, these values override the model's defaults.
+  # - If optimization is enabled, these parameters are held constant and are not tuned.
+  # Example:
+  # fixed_hyperparameters:
+  #   logistic:
+  #     max_iter: 1000
+  #   xgboost:
+  #     n_estimators: 200
+  #     learning_rate: 0.1
+  fixed_hyperparameters: null
+
+
+# ==================================================================================
+# REPORTING & ANALYSIS
+# ==================================================================================
+reporting:
+  # Enable/disable final training report generation
+  enabled: true
+
+  # Include SHAP (SHapley Additive exPlanations) analysis in report
+  # Provides feature importance and model interpretability
+  # WARNING: Can be very slow for large datasets or complex models
+  include_shap: true
+
+  # Include permutation importance analysis in report
+  # Shows feature importance by measuring prediction degradation
+  # WARNING: Can be slow as it requires multiple model re-evaluations
+  include_permutation_importance: true
+
+  # Include learning curves in report
+  # Shows model performance vs training set size (helps detect overfitting/underfitting)
+  # WARNING: Computationally expensive (trains model multiple times)
+  include_learning_curves: true
+
+  # Sample size for SHAP analysis (randomly sampled from test set)
+  # Smaller = faster but less stable, larger = slower but more accurate
+  shap_sample_size: 100  # Range: 10-1000
+
+  # Number of times to repeat permutation importance calculation
+  # More repeats = more stable estimates but slower
+  permutation_importance_n_repeats: 10  # Range: 1-50
+
+  # Number of training set size steps for learning curve
+  # More steps = smoother curve but slower computation
+  learning_curve_steps: 10  # Range: 5-20
