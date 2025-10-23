@@ -243,40 +243,84 @@ def handle_inf_values(df: pd.DataFrame) -> pd.DataFrame:
     return df_clean
 
 
-# TODO: when tolerance is low and all features are removed, it's being skipped
-# maybe leave some of featueres with the highest variance
 def remove_constant_features(
-    df: pd.DataFrame, target: str, constant_tolerance: float = 1.0
+    df: pd.DataFrame,
+    target: str,
+    constant_tolerance: float = 1.0,
+    min_features_to_keep: int = 1,
 ) -> pd.DataFrame:
-    # Separate target from features
     X = df.drop(columns=[target])
 
-    # Use feature-engine's DropConstantFeatures
+    if X.shape[1] == 0:
+        logger.info("No features to analyze for constant feature removal.")
+        return df
+
     dropper = DropConstantFeatures(tol=constant_tolerance, missing_values="ignore")
 
     try:
-        X_clean = dropper.fit_transform(X)
+        dropper.fit(X)
+        features_to_drop = dropper.features_to_drop_.copy()
 
-        removed_features = dropper.features_to_drop_
+        # if all features are constant (or quasi-constant) and min_features_to_keep=0, skip removal
+        if min_features_to_keep == 0 and len(features_to_drop) == X.shape[1]:
+            logger.info(
+                "All features identified as constant and min_features_to_keep is 0. "
+                "Skipping constant feature removal."
+            )
+            return df
 
-        # Recombine with target
-        df_clean = pd.concat([X_clean, df[[target]]], axis=1)
+        # calculate how many features would remain
+        n_features_remaining = X.shape[1] - len(features_to_drop)
 
-        if removed_features:
+        # rescue features if we'd drop too many
+        if n_features_remaining < min_features_to_keep:
+            n_to_rescue = min_features_to_keep - n_features_remaining
+
+            logger.warning(
+                "%d features identified as constant (tol=%.2f), leaving only %d. "
+                "Rescuing %d least-constant features to maintain minimum of %d.",
+                len(features_to_drop),
+                constant_tolerance,
+                n_features_remaining,
+                n_to_rescue,
+                min_features_to_keep,
+            )
+
+            # sort dropped features by performance (variance) and rescue the least constant
+            performance_of_dropped = {
+                f: dropper.feature_performance_[f]
+                for f in features_to_drop
+                if f in dropper.feature_performance_
+            }
+
+            # keep features with highest variance (lowest performance score = more variance)
+            features_to_rescue = sorted(
+                performance_of_dropped.items(), key=lambda item: item[1]
+            )[:n_to_rescue]
+
+            features_to_rescue = [f[0] for f in features_to_rescue]
+            features_to_drop = [
+                f for f in features_to_drop if f not in features_to_rescue
+            ]
+
+        if features_to_drop:
+            X_clean = X.drop(columns=features_to_drop)
             logger.info(
                 "Removed %d constant/quasi-constant features (tol=%.2f): %s",
-                len(removed_features),
+                len(features_to_drop),
                 constant_tolerance,
-                ", ".join(removed_features[:5])
+                ", ".join(features_to_drop[:5])
                 + (
-                    f" ... (+{len(removed_features) - 5} more)"
-                    if len(removed_features) > 5
+                    f" ... (+{len(features_to_drop) - 5} more)"
+                    if len(features_to_drop) > 5
                     else ""
                 ),
             )
         else:
-            logger.info("No constant features detected")
+            X_clean = X
+            logger.info("No constant features detected to remove.")
 
+        df_clean = pd.concat([X_clean, df[[target]]], axis=1)
         return df_clean
 
     except Exception as e:
@@ -535,7 +579,12 @@ def clean_data(df: pd.DataFrame, target: str, cfg: CleaningConfig) -> pd.DataFra
 
     # 13. Remove constant/quasi-constant features
     if cfg.remove_constant_features:
-        result_df = remove_constant_features(result_df, target, cfg.constant_tolerance)
+        result_df = remove_constant_features(
+            result_df,
+            target,
+            cfg.constant_tolerance,
+            cfg.min_features_after_constant_removal,
+        )
 
     # 14. Remove ID columns
     if cfg.remove_id_columns:

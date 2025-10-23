@@ -157,7 +157,16 @@ class CleaningConfig(BaseModel):
         le=1.0,
         description="Threshold for constant features. 1.0 = only 100% constant, 0.95 = 95%+ same value",
     )
-
+    min_features_after_constant_removal: int = Field(
+        default=1,
+        ge=0,
+        description=(
+            "Minimum features to keep after constant feature removal. "
+            "If removal would leave fewer than this, the most variant features are retained. "
+            "Set to 0 to allow removal of all features. "
+            "Note: Removal is skipped entirely if min=0 and all features are constant."
+        ),
+    )
     remove_id_columns: bool = Field(
         default=False,
         description="Automatically remove columns with >id_column_threshold unique values (likely IDs)",

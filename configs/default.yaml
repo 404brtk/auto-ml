@@ -65,6 +65,12 @@ cleaning:
   # 0.95 = remove features where 95%+ of values are identical
   constant_tolerance: 1.0  # Range: 0.0-1.0
 
+  # Minimum number of features to retain after constant feature removal.
+  # If removal would drop below this threshold, the most variant features are kept.
+  # Set to 0 to allow removal of all features.
+  # NOTE: Removal is skipped entirely if min=0 and all features are constant.
+  min_features_after_constant_removal: 1  # Integer >= 0
+
   # Automatically detect and remove ID columns (columns with too many unique values)
   # Useful for removing primary keys, UUIDs, etc.
   remove_id_columns: false
