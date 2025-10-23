@@ -45,7 +45,7 @@ class OutlierConfig(BaseModel):
     )
     # IQR
     iqr_multiplier: float = Field(
-        default=1.5,
+        default=3.0,
         gt=0,
         description="IQR multiplier for outlier detection (1.5 = standard, 3.0 = conservative)",
     )
