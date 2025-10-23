@@ -1,14 +1,14 @@
 # Configuration Files
 
-This directory contains YAML configuration files for the AutoML pipeline.
+This directory contains YAML configuration files for the auto-ml pipeline.
 
 ## Usage
 ```bash
-poetry run auto-ml run --dataset data.csv --target target_column --config configs/default.yaml
+uv run auto-ml run --dataset <dataset_path> --target <target_column_name> --config <config_path>
 ```
 
 ## Files
 - **default.yaml**: Comprehensive configuration with all options and documentation
 - **quickstart.yaml**: Minimal configuration for quick experimentation
 
-You can copy and modify these files for your specific use cases.
+You can modify these files for your specific use cases.
