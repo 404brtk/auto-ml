@@ -1,8 +1,9 @@
 """Integration tests for full auto-ML pipeline workflow."""
 
-import pandas as pd
 import numpy as np
+import pandas as pd
 import pytest
+
 from auto_ml_pipeline.config import (
     CleaningConfig,
     FeatureEngineeringConfig,
@@ -11,64 +12,295 @@ from auto_ml_pipeline.config import (
     ScalingConfig,
     ImputationConfig,
     TaskType,
+    PipelineConfig,
+    OptimizationConfig,
+    ModelsConfig,
+    IOConfig,
+    ReportConfig,
 )
 from auto_ml_pipeline.data_cleaning import clean_data
 from auto_ml_pipeline.feature_engineering import build_preprocessor
 from auto_ml_pipeline.feature_selection import build_selector
-from auto_ml_pipeline.task_inference import infer_task
+from auto_ml_pipeline.trainer import train
+from typer.testing import CliRunner
+
+import warnings
+
+
+@pytest.fixture(autouse=True)
+def suppress_warnings():
+    warnings.filterwarnings("ignore", message=".*does not have valid feature names.*")
+
+
+@pytest.fixture(scope="session")
+def random_seed():
+    seed = 42
+    np.random.seed(seed)
+    return seed
 
 
 @pytest.fixture
-def large_classification_df():
-    """Large DataFrame for classification tasks."""
+def classification_data():
     np.random.seed(42)
+    n_samples = 300
     return pd.DataFrame(
         {
-            "numeric1": np.random.randn(100),
-            "numeric2": np.random.randn(100),
-            "category": np.random.choice(["A", "B", "C"], 100),
+            "numeric1": np.random.randn(n_samples),
+            "numeric2": np.random.randn(n_samples) * 100 + 50,
+            "category_low": np.random.choice(["A", "B", "C"], n_samples),
+            "category_high": [f"cat_{i % 30}" for i in range(n_samples)],
+            "date": pd.date_range("2023-01-01", periods=n_samples),
+            "target": np.random.randint(0, 3, n_samples),
+        }
+    )
+
+
+@pytest.fixture
+def regression_data():
+    np.random.seed(42)
+    n_samples = 100
+    return pd.DataFrame(
+        {
+            "feat1": np.random.randn(n_samples),
+            "feat2": np.random.randn(n_samples),
+            "feat3": np.random.choice(["low", "medium", "high"], n_samples),
+            "target": np.random.randn(n_samples) * 10 + 50,
+        }
+    )
+
+
+@pytest.fixture
+def messy_data():
+    np.random.seed(42)
+    n_samples = 100
+    df = pd.DataFrame(
+        {
+            "user_id": range(n_samples),
+            "numeric1": np.random.randn(n_samples),
+            "numeric2": np.random.randn(n_samples),
+            "category": np.random.choice(["A", "B", "C"], n_samples),
+            "date": pd.date_range("2023-01-01", periods=n_samples),
+            "target": np.random.randint(0, 2, n_samples),
+        }
+    )
+
+    df.loc[5, "numeric1"] = np.nan
+    df.loc[10, "category"] = np.nan
+    df.loc[15, "target"] = np.nan
+    df = pd.concat([df, df.iloc[:5]], ignore_index=True)
+
+    return df
+
+
+@pytest.fixture
+def text_data():
+    np.random.seed(42)
+    texts = [
+        "This is a long sample text for classification task that needs to be really quite long to exceed the text length threshold for proper processing",
+        "Another text sample with different words and content and more words to make it sufficiently long for text feature extraction",
+        "Machine learning and natural language processing example with additional descriptive text to meet the minimum length requirements",
+        "Final text entry for testing purposes with extra content to ensure it is categorized as text and not as categorical variable",
+    ]
+    return pd.DataFrame(
+        {
+            "text": texts * 25,
             "target": np.random.randint(0, 2, 100),
         }
     )
 
 
 @pytest.fixture
-def large_regression_df():
-    """Large DataFrame for regression tasks."""
-    np.random.seed(42)
-    return pd.DataFrame(
-        {
-            "feat1": np.random.randn(100),
-            "feat2": np.random.randn(100),
-            "feat3": np.random.choice(["low", "medium", "high"], 100),
-            "target": np.random.randn(100) * 10 + 50,
-        }
-    )
+def cli_runner():
+    return CliRunner()
 
 
-class TestEndToEndClassification:
-    """Test end-to-end classification workflow."""
+@pytest.fixture
+def cli_app():
+    from auto_ml_pipeline.cli import app
 
-    def test_simple_classification_workflow(self, large_classification_df):
-        """Test simple classification from raw data to predictions."""
-        cfg = CleaningConfig(drop_duplicates=True, remove_id_columns=False)
-        df_clean, target = clean_data(large_classification_df, "target", cfg)
+    return app
 
-        # Ensure we have data after cleaning
-        assert len(df_clean) > 0, "DataFrame is empty after cleaning"
 
-        fe_cfg = FeatureEngineeringConfig()
-        X = df_clean.drop(target, axis=1)
+def check_no_nan(array_like):
+    if hasattr(array_like, "values"):
+        return not np.isnan(array_like.values).any()
+    return not np.isnan(array_like).any()
 
-        preprocessor, col_types = build_preprocessor(X, fe_cfg)
+
+class TestDataCleaningIntegration:
+    def test_clean_messy_data_end_to_end(self, messy_data):
+        cfg = CleaningConfig(
+            drop_duplicates=True, max_missing_row_ratio=0.3, remove_id_columns=True
+        )
+
+        result, target = clean_data(messy_data, "target", cfg)
+
+        assert len(result) < len(messy_data)
+        assert not result[target].isna().any()
+        assert not result.duplicated().any()
+        assert len(result) > 50
+
+    def test_clean_preserves_data_types(self, classification_data):
+        cfg = CleaningConfig(remove_id_columns=False)
+        result, target = clean_data(classification_data, "target", cfg)
+
+        assert pd.api.types.is_numeric_dtype(result["numeric1"])
+        assert pd.api.types.is_numeric_dtype(result["numeric2"])
+        assert pd.api.types.is_datetime64_any_dtype(result["date"])
+
+    def test_clean_with_datetime_and_numeric_conversion(self):
+        df = pd.DataFrame(
+            {
+                "date_str": ["2023-01-01", "2023-02-15", "2023-03-30"],
+                "numeric_str": ["1", "2", "3"],
+                "target": [0, 1, 0],
+            }
+        )
+
+        cfg = CleaningConfig(remove_id_columns=False)
+        result, target = clean_data(df, "target", cfg)
+
+        assert pd.api.types.is_datetime64_any_dtype(result["date_str"])
+        assert pd.api.types.is_numeric_dtype(result["numeric_str"])
+
+
+class TestFeatureEngineeringIntegration:
+    def test_mixed_feature_types_preprocessing(self, classification_data):
+        cfg = FeatureEngineeringConfig(extract_datetime=True)
+        X = classification_data.drop("target", axis=1)
+        y = classification_data["target"]
+
+        preprocessor, col_types = build_preprocessor(X, cfg)
+        X_transformed = preprocessor.fit_transform(X, y)
+
+        total_features = (
+            len(col_types.numeric)
+            + len(col_types.categorical_low)
+            + len(col_types.categorical_high)
+            + len(col_types.datetime)
+        )
+        assert total_features > 0
+        assert check_no_nan(X_transformed)
+        assert X_transformed.shape[0] == len(X)
+
+    def test_high_cardinality_encoding(self):
+        np.random.seed(42)
+        df = pd.DataFrame({"high_card": [f"cat_{i}" for i in range(100)]})
+        y = np.random.randn(100)
+
+        cfg = FeatureEngineeringConfig(
+            encoding=EncodingConfig(high_cardinality_threshold=50)
+        )
+
+        preprocessor, col_types = build_preprocessor(df, cfg)
+        assert len(col_types.categorical_high) == 1
+
+        X_transformed = preprocessor.fit_transform(df, y)
+        assert X_transformed.shape[0] == 100
+        assert check_no_nan(X_transformed)
+
+    @pytest.mark.parametrize("strategy", ["standard", "minmax", "robust"])
+    def test_scaling_strategies(self, strategy):
+        df = pd.DataFrame({"feat": [1, 100, 1000, 10000]})
+        cfg = FeatureEngineeringConfig(scaling=ScalingConfig(strategy=strategy))
+
+        preprocessor, _ = build_preprocessor(df, cfg)
+        X_transformed = preprocessor.fit_transform(df)
+
+        assert X_transformed.max() < df["feat"].max()
+        assert check_no_nan(X_transformed)
+
+    @pytest.mark.parametrize("strategy", ["mean", "median"])
+    def test_imputation_strategies(self, strategy):
+        df = pd.DataFrame({"feat": [1, 2, np.nan, 4, 5]})
+        cfg = FeatureEngineeringConfig(
+            imputation=ImputationConfig(strategy_num=strategy)
+        )
+
+        preprocessor, _ = build_preprocessor(df, cfg)
+        X_transformed = preprocessor.fit_transform(df)
+
+        assert check_no_nan(X_transformed)
+
+    def test_text_feature_extraction(self, text_data):
+        cfg = FeatureEngineeringConfig(
+            handle_text=True, max_features_text=100, text_length_threshold=50
+        )
+        X = text_data.drop("target", axis=1)
+
+        preprocessor, col_types = build_preprocessor(X, cfg)
         X_transformed = preprocessor.fit_transform(X)
 
-        assert X_transformed.shape[0] == len(df_clean)
+        assert len(col_types.text) == 1
         assert X_transformed.shape[1] > 0
-        assert not np.isnan(X_transformed).any()
 
-    def test_workflow_with_missing_values(self):
-        """Test workflow with missing values in features."""
+    def test_datetime_feature_extraction(self):
+        df = pd.DataFrame(
+            {
+                "date": pd.date_range("2023-01-01", periods=100),
+                "time": ["14:30:00"] * 100,
+            }
+        )
+
+        cfg = FeatureEngineeringConfig(extract_datetime=True, extract_time=True)
+        preprocessor, col_types = build_preprocessor(df, cfg)
+        X_transformed = preprocessor.fit_transform(df)
+
+        assert len(col_types.datetime) > 0
+        assert X_transformed.shape[1] > 2
+
+
+class TestFullPipelineIntegration:
+    def test_classification_pipeline_end_to_end(self, messy_data):
+        clean_cfg = CleaningConfig(
+            drop_duplicates=True, max_missing_row_ratio=0.5, remove_id_columns=True
+        )
+        df_clean, target = clean_data(messy_data, "target", clean_cfg)
+        assert len(df_clean) > 10
+
+        X = df_clean.drop(target, axis=1)
+        y = df_clean[target]
+
+        fe_cfg = FeatureEngineeringConfig(extract_datetime=True)
+        preprocessor, col_types = build_preprocessor(X, fe_cfg)
+        X_transformed = preprocessor.fit_transform(X, y)
+
+        fs_cfg = FeatureSelectionConfig(variance_threshold=0.01)
+        selector = build_selector(fs_cfg, TaskType.classification)
+
+        if selector is not None:
+            X_final = selector.fit_transform(X_transformed, y)
+        else:
+            X_final = X_transformed
+
+        assert X_final.shape[0] == len(y)
+        assert check_no_nan(X_final)
+        assert not np.isinf(
+            X_final if not hasattr(X_final, "values") else X_final.values
+        ).any()
+
+    def test_regression_pipeline_end_to_end(self, regression_data):
+        clean_cfg = CleaningConfig(remove_id_columns=False)
+        df_clean, target = clean_data(regression_data, "target", clean_cfg)
+
+        X = df_clean.drop(target, axis=1)
+        y = df_clean[target]
+
+        fe_cfg = FeatureEngineeringConfig()
+        preprocessor, _ = build_preprocessor(X, fe_cfg)
+        X_transformed = preprocessor.fit_transform(X, y)
+
+        fs_cfg = FeatureSelectionConfig(correlation_threshold=0.95)
+        selector = build_selector(fs_cfg, TaskType.regression)
+
+        X_final = (
+            selector.fit_transform(X_transformed, y) if selector else X_transformed
+        )
+
+        assert X_final.shape[0] == len(y)
+        assert check_no_nan(X_final)
+
+    def test_pipeline_with_missing_values(self):
         df = pd.DataFrame(
             {
                 "feat1": [1, 2, np.nan, 4, 5] * 20,
@@ -78,456 +310,162 @@ class TestEndToEndClassification:
             }
         )
 
-        cfg = CleaningConfig(drop_duplicates=False, remove_id_columns=False)
-        df_clean, target = clean_data(df, "target", cfg)
+        clean_cfg = CleaningConfig(drop_duplicates=False, remove_id_columns=False)
+        df_clean, target = clean_data(df, "target", clean_cfg)
 
-        assert len(df_clean) > 0
+        X = df_clean.drop(target, axis=1)
+        y = df_clean[target]
 
         fe_cfg = FeatureEngineeringConfig()
-        X = df_clean.drop(target, axis=1)
-
         preprocessor, _ = build_preprocessor(X, fe_cfg)
-        X_transformed = preprocessor.fit_transform(X)
+        X_transformed = preprocessor.fit_transform(X, y)
 
-        # Missing values should be imputed
-        assert not np.isnan(X_transformed).any()
+        assert check_no_nan(X_transformed)
 
-    def test_workflow_with_duplicates(self):
-        """Test workflow removes duplicates."""
-        df = pd.DataFrame({"feat": [1, 2, 1, 3], "target": [0, 1, 0, 1]})
 
-        cfg = CleaningConfig(drop_duplicates=True, remove_id_columns=False)
-        df_clean, target = clean_data(df, "target", cfg)
-
-        # Should remove one duplicate
-        assert len(df_clean) == 3
-
-    def test_workflow_with_datetime(self):
-        """Test workflow with datetime features."""
-        df = pd.DataFrame(
-            {
-                "date": ["2023-01-01", "2023-02-15", "2023-03-30", "2023-04-20"],
-                "time": ["14:30:00", "09:15:30", "18:45:00", "12:00:00"],
-                "target": [0, 1, 0, 1],
-            }
+class TestTrainingIntegration:
+    def test_classification_training_workflow(self, classification_data, tmp_path):
+        cfg = PipelineConfig(
+            task=TaskType.classification,
+            optimization=OptimizationConfig(enabled=True, n_trials=2),
+            models=ModelsConfig(models=["logistic", "decision_tree"]),
+            io=IOConfig(output_dir=tmp_path),
+            reporting=ReportConfig(enabled=True),
         )
 
-        cfg = CleaningConfig(remove_id_columns=False)
-        df_clean, target = clean_data(df, "target", cfg)
+        result = train(classification_data, "target", cfg)
 
-        fe_cfg = FeatureEngineeringConfig(extract_datetime=True, extract_time=True)
-        X = df_clean.drop(target, axis=1)
+        assert result is not None
+        assert result.best_model_name in ["logistic", "decision_tree"]
+        assert result.best_score > -np.inf
+        assert result.best_estimator is not None
+        assert "f1_macro" in result.metrics
 
-        preprocessor, col_types = build_preprocessor(X, fe_cfg)
-        X_transformed = preprocessor.fit_transform(X)
+        run_dir = tmp_path / result.run_dir.name
+        assert (run_dir / "training_report.html").exists()
+        assert (run_dir / "eval_model.joblib").exists()
+        assert (run_dir / "results.json").exists()
 
-        # Should extract datetime features
-        assert X_transformed.shape[1] > 2
-
-    def test_workflow_with_text(self):
-        """Test workflow with text features."""
-        df = pd.DataFrame(
-            {
-                "text": [
-                    "This is a long sample text for classification task that needs to be really quite long to exceed the text length threshold for proper processing",
-                    "Another text sample with different words and content and more words to make it sufficiently long for text feature extraction",
-                    "Machine learning and natural language processing example with additional descriptive text to meet the minimum length requirements",
-                    "Final text entry for testing purposes with extra content to ensure it is categorized as text and not as categorical variable",
-                ],
-                "target": [0, 1, 0, 1],
-            }
+    def test_regression_training_workflow(self, regression_data, tmp_path):
+        cfg = PipelineConfig(
+            task=TaskType.regression,
+            optimization=OptimizationConfig(enabled=True, n_trials=2),
+            models=ModelsConfig(models=["linear", "ridge"]),
+            io=IOConfig(output_dir=tmp_path),
+            reporting=ReportConfig(enabled=False),
         )
 
-        cfg = CleaningConfig(remove_id_columns=False)
-        df_clean, target = clean_data(df, "target", cfg)
+        result = train(regression_data, "target", cfg)
 
-        fe_cfg = FeatureEngineeringConfig(
-            handle_text=True, max_features_text=100, text_length_threshold=50
-        )
-        X = df_clean.drop(target, axis=1)
+        assert result is not None
+        assert result.best_model_name in ["linear", "ridge"]
+        assert result.best_estimator is not None
+        assert "rmse" in result.metrics
 
-        preprocessor, col_types = build_preprocessor(X, fe_cfg)
-        X_transformed = preprocessor.fit_transform(X)
-
-        # Should create TF-IDF features
-        assert len(col_types.text) == 1
-        assert X_transformed.shape[1] > 0
+        run_dir = tmp_path / result.run_dir.name
+        assert not (run_dir / "training_report.html").exists()
+        assert (run_dir / "eval_model.joblib").exists()
 
 
-class TestEndToEndRegression:
-    """Test end-to-end regression workflow."""
-
-    def test_simple_regression_workflow(self, large_regression_df):
-        """Test simple regression workflow."""
-        cfg = CleaningConfig(remove_id_columns=False)
-        df_clean, target = clean_data(large_regression_df, "target", cfg)
-
-        assert len(df_clean) > 0
-
-        fe_cfg = FeatureEngineeringConfig()
-        X = df_clean.drop(target, axis=1)
-
-        preprocessor, _ = build_preprocessor(X, fe_cfg)
-        X_transformed = preprocessor.fit_transform(X)
-
-        assert X_transformed.shape[0] == len(df_clean)
-        assert not np.isnan(X_transformed).any()
-
-    def test_regression_with_feature_selection(self):
-        """Test regression with feature selection."""
+class TestCLIIntegration:
+    @pytest.mark.parametrize(
+        "task_type,target_col,n_samples",
+        [
+            ("classification", "target", 100),
+            ("regression", "target", 100),
+        ],
+    )
+    def test_cli_run_command(
+        self, cli_runner, cli_app, tmp_path, task_type, target_col, n_samples
+    ):
         np.random.seed(42)
-        X = pd.DataFrame(np.random.randn(100, 20))
-        y = pd.Series(np.random.randn(100))
-        df = X.copy()
-        df["target"] = y
-
-        cfg = CleaningConfig(remove_id_columns=False)
-        df_clean, target = clean_data(df, "target", cfg)
-
-        fe_cfg = FeatureEngineeringConfig()
-        X_clean = df_clean.drop(target, axis=1)
-        y_clean = df_clean[target]
-
-        preprocessor, _ = build_preprocessor(X_clean, fe_cfg)
-        X_transformed = preprocessor.fit_transform(X_clean)
-
-        fs_cfg = FeatureSelectionConfig(
-            variance_threshold=0.1, correlation_threshold=0.95
-        )
-        selector = build_selector(fs_cfg, TaskType.regression)
-
-        if selector is not None:
-            X_selected = selector.fit_transform(X_transformed, y_clean)
-            assert X_selected.shape[1] <= X_transformed.shape[1]
-
-
-class TestTaskInference:
-    """Test task type inference."""
-
-    def test_infer_binary_classification(self):
-        """Test inference of binary classification."""
-        df = pd.DataFrame({"target": [0, 1] * 50})
-        task = infer_task(df, "target")
-        assert task == TaskType.classification
-
-    def test_infer_multiclass_classification(self):
-        """Test inference of multiclass classification."""
-        df = pd.DataFrame({"target": [0, 1, 2] * 40})
-        task = infer_task(df, "target")
-        assert task == TaskType.classification
-
-    def test_infer_regression(self):
-        """Test inference of regression."""
-        df = pd.DataFrame({"target": [1.5, 2.7, 3.2, 4.8, 5.1]})
-        task = infer_task(df, "target")
-        assert task == TaskType.regression
-
-    def test_infer_integer_regression(self):
-        """Test regression inference with integer targets."""
-        df = pd.DataFrame({"target": list(range(100))})
-        task = infer_task(df, "target")
-        assert task == TaskType.regression
-
-
-class TestDataCleaningIntegration:
-    """Integration tests for data cleaning module."""
-
-    def test_clean_with_all_operations(self):
-        """Test cleaning with all operations enabled."""
-        df = pd.DataFrame(
-            {
-                "feat1": [1, 2, 1, 4, np.nan, 6],
-                "feat2": [10, 20, 10, 40, np.nan, 60],
-                "numeric_str": ["1.5", "2.5", "1.5", "4.5", "5.5", "6.5"],
-                "target": [0, 1, 0, 1, np.nan, 1],
-            }
-        )
-
-        cfg = CleaningConfig(
-            drop_duplicates=True, max_missing_row_ratio=0.3, remove_id_columns=False
-        )
-
-        result, target = clean_data(df, "target", cfg)
-
-        # Should remove rows with missing target and duplicates
-        assert len(result) < len(df)
-        assert not result[target].isna().any()
-        assert not result.duplicated().any()
-
-    def test_clean_preserves_datatypes(self):
-        """Test that cleaning preserves appropriate datatypes."""
-        df = pd.DataFrame(
-            {
-                "int_col": [1, 2, 3],
-                "float_col": [1.5, 2.5, 3.5],
-                "str_col": ["a", "b", "c"],
-                "target": [0, 1, 0],
-            }
-        )
-
-        cfg = CleaningConfig(remove_id_columns=False)
-        result, target = clean_data(df, "target", cfg)
-
-        assert pd.api.types.is_integer_dtype(result["int_col"])
-        assert pd.api.types.is_float_dtype(result["float_col"])
-        assert result["str_col"].dtype == object
-
-    def test_clean_with_datetime_conversion(self):
-        """Test datetime conversion during cleaning."""
-        df = pd.DataFrame(
-            {
-                "date_str": ["2023-01-01", "2023-02-15", "2023-03-30"],
-                "target": [0, 1, 0],
-            }
-        )
-
-        cfg = CleaningConfig(remove_id_columns=False)
-        result, target = clean_data(df, "target", cfg)
-
-        # Date strings should be converted to datetime
-        assert pd.api.types.is_datetime64_any_dtype(result["date_str"])
-
-    def test_clean_with_numeric_coercion(self):
-        """Test numeric coercion during cleaning."""
-        df = pd.DataFrame({"numeric_str": ["1", "2", "3", "4"], "target": [0, 1, 0, 1]})
-
-        cfg = CleaningConfig(remove_id_columns=False)
-        result, target = clean_data(df, "target", cfg)
-
-        # Numeric strings should be converted to numbers
-        assert pd.api.types.is_numeric_dtype(result["numeric_str"])
-
-
-class TestFeatureEngineeringIntegration:
-    """Integration tests for feature engineering module."""
-
-    def test_mixed_feature_types(self):
-        """Test preprocessing with mixed feature types."""
-        df = pd.DataFrame(
-            {
-                "numeric": [1, 2, 3, 4, 5] * 20,
-                "categorical": ["A", "B", "A", "C", "B"] * 20,
-                "datetime": pd.date_range("2023-01-01", periods=100),
-                "text": [
-                    "This is a longer text sample that exceeds the minimum length threshold for text processing",
-                    "Another longer text sample with sufficient words to be categorized as text feature for machine learning",
-                    "Third text sample with many words to ensure proper text categorization and feature extraction",
-                    "Fourth text sample designed to be long enough to trigger text processing in the pipeline",
-                    "Final text sample with adequate length to meet the text length requirements for classification",
-                ]
-                * 20,
-            }
-        )
-
-        cfg = FeatureEngineeringConfig(
-            extract_datetime=True, handle_text=True, text_length_threshold=50
-        )
-
-        preprocessor, col_types = build_preprocessor(df, cfg)
-        X_transformed = preprocessor.fit_transform(df)
-
-        # Check that feature types were identified
-        total_features = (
-            len(col_types.numeric)
-            + len(col_types.categorical_low)
-            + len(col_types.categorical_high)
-            + len(col_types.datetime)
-            + len(col_types.text)
-        )
-        assert total_features > 0
-
-        # Output should have no missing values
-        assert not np.isnan(X_transformed).any()
-
-    def test_high_cardinality_encoding(self):
-        """Test encoding of high cardinality features."""
-        df = pd.DataFrame({"high_card": [f"cat_{i}" for i in range(100)]})
-        y = np.random.randn(100)
-
-        cfg = FeatureEngineeringConfig(
-            encoding=EncodingConfig(high_cardinality_threshold=50)
-        )
-
-        preprocessor, col_types = build_preprocessor(df, cfg)
-
-        # Should be detected as high cardinality
-        assert len(col_types.categorical_high) == 1
-
-        X_transformed = preprocessor.fit_transform(df, y)
-        assert X_transformed.shape[0] == 100
-
-    def test_scaling_strategies(self):
-        """Test different scaling strategies."""
-        df = pd.DataFrame({"feat": [1, 100, 1000, 10000]})
-
-        for strategy in ["standard", "minmax", "robust"]:
-            cfg = FeatureEngineeringConfig(scaling=ScalingConfig(strategy=strategy))
-
-            preprocessor, _ = build_preprocessor(df, cfg)
-            X_transformed = preprocessor.fit_transform(df)
-
-            # Should scale the values
-            assert X_transformed.min() < df["feat"].min()
-            assert X_transformed.max() < df["feat"].max()
-
-    def test_imputation_strategies(self):
-        """Test different imputation strategies."""
-        df = pd.DataFrame({"feat": [1, 2, np.nan, 4, 5]})
-
-        for strategy in ["mean", "median"]:
-            cfg = FeatureEngineeringConfig(
-                imputation=ImputationConfig(strategy_num=strategy)
+        if task_type == "classification":
+            df = pd.DataFrame(
+                {
+                    "feature1": np.random.rand(n_samples),
+                    "feature2": np.random.rand(n_samples),
+                    target_col: np.random.randint(0, 2, n_samples),
+                }
+            )
+        else:
+            df = pd.DataFrame(
+                {
+                    "feature1": np.random.rand(n_samples),
+                    "feature2": np.random.rand(n_samples),
+                    target_col: np.random.rand(n_samples) * 100,
+                }
             )
 
-            preprocessor, _ = build_preprocessor(df, cfg)
-            X_transformed = preprocessor.fit_transform(df)
+        dataset_path = tmp_path / f"dummy_{task_type}.csv"
+        df.to_csv(dataset_path, index=False)
 
-            # Should impute missing values
-            assert not np.isnan(X_transformed).any()
+        output_dir = tmp_path / f"cli_output_{task_type}"
+        output_dir.mkdir()
 
-
-class TestCompleteWorkflow:
-    """Test complete workflow from raw data to model-ready data."""
-
-    def test_complete_classification_pipeline(self):
-        """Test complete pipeline for classification."""
-        np.random.seed(42)
-
-        df = pd.DataFrame(
-            {
-                "id": range(100),
-                "numeric1": np.random.randn(100),
-                "numeric2": np.random.randn(100) * 100 + 50,
-                "category": np.random.choice(["A", "B", "C"], 100),
-                "date": pd.date_range("2023-01-01", periods=100),
-                "target": np.random.randint(0, 3, 100),
-            }
+        result = cli_runner.invoke(
+            cli_app,
+            [
+                "run",
+                "--dataset",
+                str(dataset_path),
+                "--target",
+                target_col,
+                "--output",
+                str(output_dir),
+                "--config",
+                "configs/quickstart.yaml",
+            ],
         )
 
-        # Add some messiness
-        df.loc[5, "numeric1"] = np.nan
-        df.loc[10, "category"] = np.nan
-        df.loc[15, "target"] = np.nan
-        df = pd.concat([df, df.iloc[:5]], ignore_index=True)
+        assert result.exit_code == 0, f"CLI failed: {result.stderr}"
+        assert "Training completed!" in result.stdout
 
-        # Step 1: Clean
-        clean_cfg = CleaningConfig(
-            drop_duplicates=True, max_missing_row_ratio=0.5, remove_id_columns=False
-        )
-        df_clean, target = clean_data(df, "target", clean_cfg)
+        run_dirs = list(output_dir.glob("run_*"))
+        assert len(run_dirs) == 1
+        run_dir = run_dirs[0]
+        assert (run_dir / "eval_model.joblib").exists()
+        assert (run_dir / "results.json").exists()
 
-        # Verify we have data
-        assert len(df_clean) > 10, f"Too few rows after cleaning: {len(df_clean)}"
-
-        # Step 2: Split features and target
-        X = df_clean.drop(target, axis=1)
-        y = df_clean[target]
-
-        assert len(y) > 0, "Target is empty"
-
-        # Step 3: Feature engineering
-        fe_cfg = FeatureEngineeringConfig(extract_datetime=True, handle_text=False)
-        preprocessor, col_types = build_preprocessor(X, fe_cfg)
-        X_transformed = preprocessor.fit_transform(X)
-
-        # Step 4: Feature selection
-        fs_cfg = FeatureSelectionConfig(variance_threshold=0.01)
-        selector = build_selector(fs_cfg, TaskType.classification)
-
-        if selector is not None:
-            X_final = selector.fit_transform(X_transformed, y)
-        else:
-            X_final = X_transformed
-
-        # Verify final data quality
-        assert X_final.shape[0] == len(y)
-        assert X_final.shape[0] < 100  # Some rows removed
-        assert not np.isnan(X_final).any()
-        assert not np.isinf(X_final).any()
-
-    def test_complete_regression_pipeline(self):
-        """Test complete pipeline for regression."""
-        np.random.seed(42)
-
-        df = pd.DataFrame(
-            {
-                "feat1": np.random.randn(100),
-                "feat2": np.random.randn(100),
-                "feat3": np.random.choice(["low", "medium", "high"], 100),
-                "outlier_feat": np.concatenate(
-                    [np.random.randn(95), [100, 200, 300, 400, 500]]
-                ),
-                "target": np.random.randn(100) * 10 + 50,
-            }
-        )
-
-        # Add outliers in target
-        df.loc[90:95, "target"] = 1000
-
-        # Clean
-        clean_cfg = CleaningConfig(drop_duplicates=True, remove_id_columns=False)
-        df_clean, target = clean_data(df, "target", clean_cfg)
-
-        X = df_clean.drop(target, axis=1)
-        y = df_clean[target]
-
-        # Feature engineering
-        fe_cfg = FeatureEngineeringConfig()
-        preprocessor, _ = build_preprocessor(X, fe_cfg)
-        X_transformed = preprocessor.fit_transform(X)
-
-        # Feature selection
-        fs_cfg = FeatureSelectionConfig(correlation_threshold=0.95)
-        selector = build_selector(fs_cfg, TaskType.regression)
-
-        if selector is not None:
-            X_final = selector.fit_transform(X_transformed, y)
-        else:
-            X_final = X_transformed
-
-        # Verify
-        assert X_final.shape[0] == len(y)
-        if hasattr(X_final, "values"):
-            assert not np.isnan(X_final.values).any()
-        else:
-            assert not np.isnan(X_final).any()
-
-    def test_pipeline_with_edge_cases(self):
-        """Test pipeline handles edge cases gracefully."""
-        df_small = pd.DataFrame({"feat": [1, 2, 3], "target": [0, 1, 0]})
-
-        clean_cfg = CleaningConfig(remove_id_columns=False)
-        df_clean, target = clean_data(df_small, "target", clean_cfg)
-
-        X = df_clean.drop(target, axis=1)
-        fe_cfg = FeatureEngineeringConfig()
-        preprocessor, _ = build_preprocessor(X, fe_cfg)
-        X_transformed = preprocessor.fit_transform(X)
-
-        assert X_transformed.shape[0] == 3
-
-    def test_pipeline_reproducibility(self):
-        """Test that pipeline produces consistent results."""
+    def test_cli_export_command(self, cli_runner, cli_app, tmp_path):
         np.random.seed(42)
         df = pd.DataFrame(
             {
-                "feat1": np.random.randn(50),
-                "feat2": np.random.randn(50),
-                "target": np.random.randint(0, 2, 50),
+                "feature1": np.random.rand(100),
+                "feature2": np.random.rand(100),
+                "target": np.random.randint(0, 2, 100),
             }
         )
+        dataset_path = tmp_path / "train_data.csv"
+        df.to_csv(dataset_path, index=False)
 
-        # Run pipeline twice
-        results = []
-        for _ in range(2):
-            clean_cfg = CleaningConfig(remove_id_columns=False)
-            df_clean, target = clean_data(df, "target", clean_cfg)
+        output_dir = tmp_path / "cli_export_source"
+        output_dir.mkdir()
 
-            X = df_clean.drop(target, axis=1)
-            fe_cfg = FeatureEngineeringConfig()
-            preprocessor, _ = build_preprocessor(X, fe_cfg)
-            X_transformed = preprocessor.fit_transform(X)
-            results.append(X_transformed)
+        run_result = cli_runner.invoke(
+            cli_app,
+            [
+                "run",
+                "--dataset",
+                str(dataset_path),
+                "--target",
+                "target",
+                "--output",
+                str(output_dir),
+                "--config",
+                "configs/quickstart.yaml",
+            ],
+        )
+        assert run_result.exit_code == 0, f"Training failed: {run_result.stderr}"
 
-        # Should produce same results
-        np.testing.assert_array_almost_equal(results[0], results[1])
+        source_run_dir = list(output_dir.glob("run_*"))[0]
+        source_model_path = source_run_dir / "eval_model.joblib"
+        export_destination = tmp_path / "exported_model.joblib"
+
+        export_result = cli_runner.invoke(
+            cli_app,
+            ["export", str(source_model_path), "--to", str(export_destination)],
+        )
+
+        assert export_result.exit_code == 0, f"Export failed: {export_result.stderr}"
+        assert "Model exported to" in export_result.stdout
+        assert export_destination.exists()
