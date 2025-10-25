@@ -475,7 +475,7 @@ class SimpleTimeFeatures(BaseEstimator, TransformerMixin):
         """Extract time features as numeric array."""
         features = []
         for col in self.time_cols_:
-            # Parse time strings (HH:MM:SS format)
+            # Parse time strings (HH:MM or HH:MM:SS format)
             time_parts = X[col].astype(str).str.split(":", expand=True)
 
             # Convert to numeric, fill NaN with 0
@@ -484,15 +484,25 @@ class SimpleTimeFeatures(BaseEstimator, TransformerMixin):
                 .fillna(0)
                 .astype(int)
             )
+
             minutes = (
-                pd.to_numeric(time_parts.iloc[:, 1], errors="coerce")
-                .fillna(0)
-                .astype(int)
+                (
+                    pd.to_numeric(time_parts.iloc[:, 1], errors="coerce")
+                    .fillna(0)
+                    .astype(int)
+                )
+                if time_parts.shape[1] > 1
+                else pd.Series([0] * len(X), dtype=int)
             )
+
             seconds = (
-                pd.to_numeric(time_parts.iloc[:, 2], errors="coerce")
-                .fillna(0)
-                .astype(int)
+                (
+                    pd.to_numeric(time_parts.iloc[:, 2], errors="coerce")
+                    .fillna(0)
+                    .astype(int)
+                )
+                if time_parts.shape[1] > 2
+                else pd.Series([0] * len(X), dtype=int)
             )
 
             # Business hours (9 AM to 5 PM)
