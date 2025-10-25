@@ -528,3 +528,14 @@ reporting:
   # Number of training set size steps for learning curve
   # More steps = smoother curve but slower computation
   learning_curve_steps: 10  # Range: 5-20
+
+
+# ==================================================================================
+# API SERVER CONFIGURATION
+# ==================================================================================
+api:
+  # Host to bind the deployment server to
+  host: "127.0.0.1"
+
+  # Port to run the deployment server on
+  port: 8000

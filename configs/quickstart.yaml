@@ -66,7 +66,7 @@ features:
 # ==================================================================================
 optimization:
   enabled: true           # Enable automatic hyperparameter tuning
-  n_trials: 50            # Number of optimization attempts per model
+  n_trials: 2             # Number of optimization attempts per model
   timeout: null           # No time limit (set to seconds if needed, e.g., 3600)
   sampler: "tpe"          # Smart search algorithm (recommended)
   pruner: "median"        # Stop unpromising trials early
@@ -113,7 +113,15 @@ models:
 # REPORTING
 # ==================================================================================
 reporting:
-  enabled: true                            # Generate final report
+  enabled: false                            # Generate final report
   include_shap: true                       # Include SHAP feature importance
   include_permutation_importance: true     # Include permutation importance
   include_learning_curves: true            # Include learning curves
+
+
+# ==================================================================================
+# API SERVER CONFIGURATION
+# ==================================================================================
+api:
+  host: "127.0.0.1"
+  port: 8000

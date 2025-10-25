@@ -646,6 +646,13 @@ class ReportConfig(BaseModel):
     )
 
 
+class ApiConfig(BaseModel):
+    """Configuration for the deployment server."""
+
+    host: str = Field(default="127.0.0.1", description="Host to bind the server to.")
+    port: int = Field(default=8000, description="Port to run the server on.")
+
+
 class PipelineConfig(BaseModel):
     """Main configuration class for the AutoML pipeline."""
 
@@ -661,6 +668,7 @@ class PipelineConfig(BaseModel):
     io: IOConfig = Field(default_factory=IOConfig)
     models: ModelsConfig = Field(default_factory=ModelsConfig)
     reporting: ReportConfig = Field(default_factory=ReportConfig)
+    api: ApiConfig = Field(default_factory=ApiConfig)
 
     @model_validator(mode="after")
     def validate_config(self) -> "PipelineConfig":
