@@ -8,6 +8,7 @@ from auto_ml_pipeline.config import PipelineConfig, load_config, default_config
 from auto_ml_pipeline.trainer import train
 from auto_ml_pipeline.io_utils import load_model, save_model
 from auto_ml_pipeline.logging_utils import setup_logging
+from auto_ml_pipeline.api import start_server
 
 app = typer.Typer(add_completion=True)
 
@@ -57,6 +58,25 @@ def export(
     model = load_model(model_path)
     save_model(model, to)
     typer.echo(f"Model exported to {to}")
+
+
+@app.command()
+def deploy(
+    run_dir: Path = typer.Argument(
+        ..., exists=True, file_okay=False, help="Path to a completed run directory."
+    ),
+    config: Optional[Path] = typer.Option(None, help="Path to config (toml/yaml/json)"),
+    host: Optional[str] = typer.Option(None, help="Host to bind the server to."),
+    port: Optional[int] = typer.Option(None, help="Port to run the server on."),
+):
+    """Launch a server to deploy and serve a trained model."""
+    setup_logging()
+    cfg: PipelineConfig = load_config(config) if config else default_config()
+
+    server_host = host if host is not None else cfg.api.host
+    server_port = port if port is not None else cfg.api.port
+
+    start_server(run_dir, server_host, server_port)
 
 
 if __name__ == "__main__":
