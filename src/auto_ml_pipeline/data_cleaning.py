@@ -82,7 +82,9 @@ def handle_mixed_types(df: pd.DataFrame, strategy: str = "coerce") -> pd.DataFra
     return df_clean
 
 
-def standardize_column_names(df: pd.DataFrame, target: str) -> tuple[pd.DataFrame, str]:
+def standardize_column_names(
+    df: pd.DataFrame, target: str
+) -> tuple[pd.DataFrame, str, dict[str, str]]:
     df_clean = df.copy()
 
     # Store original names for logging
@@ -123,6 +125,10 @@ def standardize_column_names(df: pd.DataFrame, target: str) -> tuple[pd.DataFram
             seen[name] = 0
             final_names.append(name)
 
+    name_mapping = {
+        original: final for original, final in zip(original_names, final_names)
+    }
+
     df_clean.columns = final_names
 
     changes = [
@@ -142,7 +148,7 @@ def standardize_column_names(df: pd.DataFrame, target: str) -> tuple[pd.DataFram
             standardized_target,
         )
 
-    return df_clean, standardized_target
+    return df_clean, standardized_target, name_mapping
 
 
 def trim_whitespace(df: pd.DataFrame) -> pd.DataFrame:
@@ -516,7 +522,9 @@ def validate_dataset_size(
         )
 
 
-def clean_data(df: pd.DataFrame, target: str, cfg: CleaningConfig) -> pd.DataFrame:
+def clean_data(
+    df: pd.DataFrame, target: str, cfg: CleaningConfig
+) -> tuple[pd.DataFrame, str, dict[str, str]]:
     """Clean data with pre-split operations."""
     _ensure_target_exists(df, target)
 
@@ -530,7 +538,7 @@ def clean_data(df: pd.DataFrame, target: str, cfg: CleaningConfig) -> pd.DataFra
     )
 
     # 1. Standardize column names (avoid issues with special characters)
-    result_df, target = standardize_column_names(result_df, target)
+    result_df, target, name_mapping = standardize_column_names(result_df, target)
 
     # 2. Handle mixed data types
     result_df = handle_mixed_types(result_df, strategy=cfg.handle_mixed_types)
@@ -608,4 +616,4 @@ def clean_data(df: pd.DataFrame, target: str, cfg: CleaningConfig) -> pd.DataFra
         result_df.shape[0],
         result_df.shape[1],
     )
-    return result_df, target
+    return result_df, target, name_mapping

@@ -348,8 +348,16 @@ def train(df: pd.DataFrame, target: str, cfg: PipelineConfig) -> TrainResult:
     random.seed(random_state)
 
     # Clean data (pre-split operations only)
-    df, target = clean_data(df, target, cfg.cleaning)
+    df, target, name_mapping_full = clean_data(df, target, cfg.cleaning)
     logger.info("After cleaning: %d rows, %d columns", df.shape[0], df.shape[1])
+
+    feature_columns = [col for col in df.columns if col != target]
+    name_mapping = {
+        original: std
+        for original, std in name_mapping_full.items()
+        if std in feature_columns
+    }
+    logger.info(f"Feature mapping (excluding target): {list(name_mapping.keys())}")
 
     # Infer task if not specified
     if cfg.task is None:
@@ -643,6 +651,7 @@ def train(df: pd.DataFrame, target: str, cfg: PipelineConfig) -> TrainResult:
 
     try:
         save_model(best_pipeline, run_dir / "eval_model.joblib")
+        save_json(name_mapping, run_dir / "name_mapping.json")
 
         if label_encoder is not None:
             save_model(label_encoder, run_dir / "label_encoder.joblib")
@@ -675,6 +684,7 @@ def train(df: pd.DataFrame, target: str, cfg: PipelineConfig) -> TrainResult:
                 "label_encoder_file": (
                     "label_encoder.joblib" if label_encoder else None
                 ),
+                "name_mapping_file": "name_mapping.json",
                 "class_labels": (
                     label_encoder.classes_.tolist() if label_encoder else None
                 ),
