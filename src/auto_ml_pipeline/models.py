@@ -158,7 +158,7 @@ def model_search_space(model_name: str) -> HyperparamSpace:
             # incompatible penalty-solver combinations possible
             # caution required when specifying search space
             "penalty": ("categorical", ("l2",)),
-            "solver": ("categorical", ("lbfgs", "liblinear", "saga")),
+            "solver": ("categorical", ("lbfgs", "saga", "newton-cg")),
             "max_iter": ("int", (100, 5000)),
         },
         "linear": {},  # Regression only, no hyperparameters to tune
