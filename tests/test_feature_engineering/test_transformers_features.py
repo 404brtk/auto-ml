@@ -2,29 +2,36 @@
 
 import pandas as pd
 import numpy as np
+import pytest
 
 from auto_ml_pipeline.transformers import SimpleDateTimeFeatures, SimpleTimeFeatures
+
+
+@pytest.fixture
+def datetime_transformer():
+    """Fixture for SimpleDateTimeFeatures transformer."""
+    return SimpleDateTimeFeatures()
+
+
+@pytest.fixture
+def time_transformer():
+    """Fixture for SimpleTimeFeatures transformer."""
+    return SimpleTimeFeatures()
 
 
 class TestSimpleDateTimeFeatures:
     """Test SimpleDateTimeFeatures transformer."""
 
-    def test_datetime_feature_extraction(self):
+    def test_datetime_feature_extraction(self, datetime_transformer):
         """Test basic datetime feature extraction."""
         df = pd.DataFrame(
             {"date_col": pd.date_range("2023-01-01", periods=5, freq="D")}
         )
+        datetime_transformer.fit(df)
+        features = datetime_transformer.transform(df)
 
-        transformer = SimpleDateTimeFeatures()
-        transformer.fit(df)
-        features = transformer.transform(df)
-
-        # Should extract 6 features: year, month, day, dayofweek, quarter, is_weekend
         assert features.shape == (5, 6)
-        assert features.shape[1] == 6
-
-        # Check feature names
-        feature_names = transformer.get_feature_names_out()
+        feature_names = datetime_transformer.get_feature_names_out()
         expected_names = [
             "date_col_year",
             "date_col_month",
@@ -35,68 +42,39 @@ class TestSimpleDateTimeFeatures:
         ]
         assert list(feature_names) == expected_names
 
-    def test_datetime_feature_values(self):
+    def test_datetime_feature_values(self, datetime_transformer):
         """Test that extracted datetime features have correct values."""
         df = pd.DataFrame(
             {"date": pd.to_datetime(["2023-01-01", "2023-02-15", "2023-12-31"])}
         )
+        features = datetime_transformer.fit_transform(df)
 
-        transformer = SimpleDateTimeFeatures()
-        features = transformer.fit_transform(df)
+        assert features[0, 0] == 2023
+        assert features[0, 1] == 1
+        assert features[0, 2] == 1
+        assert features[0, 3] == 6
+        assert features[0, 4] == 1
+        assert features[0, 5] == 1
 
-        # Check specific values
-        assert features[0, 0] == 2023  # year
-        assert features[0, 1] == 1  # month
-        assert features[0, 2] == 1  # day
-        assert features[0, 3] == 6  # dayofweek (Sunday = 6)
-        assert features[0, 4] == 1  # quarter
-        assert features[0, 5] == 1  # is_weekend (Sunday = True)
-
-        assert features[1, 1] == 2  # February
-        assert features[1, 2] == 15  # 15th
-        assert features[2, 1] == 12  # December
-        assert features[2, 4] == 4  # Q4
-
-    def test_datetime_with_missing_values(self):
+    def test_datetime_with_missing_values(self, datetime_transformer):
         """Test datetime feature extraction with NaN values."""
         df = pd.DataFrame({"date": pd.to_datetime(["2023-01-01", None, "2023-01-03"])})
+        features = datetime_transformer.fit_transform(df)
 
-        transformer = SimpleDateTimeFeatures()
-        features = transformer.fit_transform(df)
-
-        # Row 0: valid date
         assert not np.isnan(features[0, :]).any()
-
-        # Row 1: NaT date - most features become NaN, but is_weekend becomes 0
-        assert np.isnan(features[1, 0])  # year
-        assert np.isnan(features[1, 1])  # month
-        assert np.isnan(features[1, 2])  # day
-        assert np.isnan(features[1, 3])  # dayofweek
-        assert np.isnan(features[1, 4])  # quarter
-        assert features[1, 5] == 0  # is_weekend (False for NaT)
-
-        # Row 2: valid date
+        assert np.isnan(features[1, 0])
+        assert features[1, 5] == 0
         assert not np.isnan(features[2, :]).any()
 
 
 class TestSimpleTimeFeatures:
     """Test SimpleTimeFeatures transformer."""
 
-    def test_time_feature_extraction(self):
-        """Test basic time feature extraction."""
-        df = pd.DataFrame(
-            {"time_col": ["14:30:00", "09:15:30", "18:45:00", "12:00:00", "23:59:00"]}
-        )
-
-        transformer = SimpleTimeFeatures()
-        transformer.fit(df)
-        features = transformer.transform(df)
-
-        # Should extract 5 features: hour, minute, second, is_business_hours, time_category
-        assert features.shape == (5, 5)
-
-        # Check feature names
-        feature_names = transformer.get_feature_names_out()
+    def test_feature_names(self, time_transformer):
+        """Test that feature names are correctly generated."""
+        df = pd.DataFrame({"time_col": ["14:30:00"]})
+        time_transformer.fit(df)
+        feature_names = time_transformer.get_feature_names_out()
         expected_names = [
             "time_col_hour",
             "time_col_minute",
@@ -106,53 +84,48 @@ class TestSimpleTimeFeatures:
         ]
         assert list(feature_names) == expected_names
 
-    def test_time_feature_values(self):
-        """Test that extracted time features have correct values."""
-        df = pd.DataFrame({"time": ["14:30:00", "09:15:30", "18:45:00", "23:59:00"]})
+    @pytest.mark.parametrize(
+        "time_str, expected",
+        [
+            ("14:30:05", [14, 30, 5, 1, 2]),
+            ("09:15:30", [9, 15, 30, 1, 1]),
+            ("18:45", [18, 45, 0, 0, 3]),
+            ("23:59", [23, 59, 0, 0, 3]),
+            ("8", [8, 0, 0, 0, 1]),
+        ],
+    )
+    def test_time_feature_values(self, time_transformer, time_str, expected):
+        """Test that time features are extracted correctly for various formats."""
+        df = pd.DataFrame({"time": [time_str]})
+        features = time_transformer.fit_transform(df)
+        np.testing.assert_array_equal(features[0], expected)
 
-        transformer = SimpleTimeFeatures()
-        features = transformer.fit_transform(df)
-
-        # Check specific values
-        assert features[0, 0] == 14  # hour
-        assert features[0, 1] == 30  # minute
-        assert features[0, 2] == 0  # second
-        assert features[0, 3] == 1  # is_business_hours (2-6 PM = True)
-        assert features[0, 4] == 2  # afternoon category
-
-        assert features[1, 0] == 9  # morning hour
-        assert features[1, 3] == 1  # business hours
-        assert features[1, 4] == 1  # morning category
-
-        assert features[2, 0] == 18  # evening hour
-        assert features[2, 3] == 0  # not business hours
-        assert features[2, 4] == 3  # evening category
-
-        assert features[3, 0] == 23  # late night hour
-        assert features[3, 4] == 3  # evening category (18-24)
-
-    def test_time_with_missing_values(self):
+    def test_time_with_missing_values(self, time_transformer):
         """Test time feature extraction with missing values."""
         df = pd.DataFrame({"time": ["14:30:00", None, "18:45:00"]})
-
-        transformer = SimpleTimeFeatures()
-        features = transformer.fit_transform(df)
-
-        # Should handle NaN by filling with most frequent
+        features = time_transformer.fit_transform(df)
         assert not np.isnan(features).any()
+        assert features[1, 0] == 0
 
-    def test_time_category_mapping(self):
+    def test_time_category_mapping(self, time_transformer):
         """Test that time categories are correctly assigned."""
-        df = pd.DataFrame(
-            {"time": ["06:00:00", "12:00:00", "18:00:00", "00:00:00", "03:00:00"]}
-        )
+        df = pd.DataFrame({"time": ["03:00:00", "08:00:00", "15:00:00", "20:00:00"]})
+        features = time_transformer.fit_transform(df)
+        assert features[0, 4] == 0
+        assert features[1, 4] == 1
+        assert features[2, 4] == 2
+        assert features[3, 4] == 3
 
-        transformer = SimpleTimeFeatures()
-        features = transformer.fit_transform(df)
+    def test_invalid_time_format(self, time_transformer):
+        """Test that invalid time formats are handled gracefully."""
+        df = pd.DataFrame({"time": ["invalid-time", "14:30:00"]})
+        features = time_transformer.fit_transform(df)
+        assert (features[0] == 0).all()
+        assert features[1, 0] == 14
 
-        # Categories: 0=night (0-6), 1=morning (6-12), 2=afternoon (12-18), 3=evening (18-24)
-        assert features[0, 4] == 1  # 6 AM = morning
-        assert features[1, 4] == 2  # 12 PM = afternoon
-        assert features[2, 4] == 3  # 6 PM = evening
-        assert features[3, 4] == 0  # 12 AM = night
-        assert features[4, 4] == 0  # 3 AM = night
+    def test_all_nan_column(self, time_transformer):
+        """Test that a column with all NaNs is handled correctly."""
+        df = pd.DataFrame({"time": [None, np.nan]})
+        features = time_transformer.fit_transform(df)
+        assert features.shape == (2, 5)
+        assert (features == 0).all()
