@@ -666,6 +666,7 @@ def train(df: pd.DataFrame, target: str, cfg: PipelineConfig) -> TrainResult:
         save_json(
             {
                 "task": task.value,
+                "target": target,
                 "best_model": best_model_name,
                 "best_cv_score": best_score,
                 "test_metrics": metrics,
