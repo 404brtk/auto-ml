@@ -3,6 +3,7 @@
 import numpy as np
 import pandas as pd
 import pytest
+import warnings
 
 from auto_ml_pipeline.config import (
     CleaningConfig,
@@ -23,8 +24,6 @@ from auto_ml_pipeline.feature_engineering import build_preprocessor
 from auto_ml_pipeline.feature_selection import build_selector
 from auto_ml_pipeline.trainer import train
 from typer.testing import CliRunner
-
-import warnings
 
 
 @pytest.fixture(autouse=True)
@@ -83,12 +82,10 @@ def messy_data():
             "target": np.random.randint(0, 2, n_samples),
         }
     )
-
     df.loc[5, "numeric1"] = np.nan
     df.loc[10, "category"] = np.nan
     df.loc[15, "target"] = np.nan
     df = pd.concat([df, df.iloc[:5]], ignore_index=True)
-
     return df
 
 
@@ -132,8 +129,7 @@ class TestDataCleaningIntegration:
         cfg = CleaningConfig(
             drop_duplicates=True, max_missing_row_ratio=0.3, remove_id_columns=True
         )
-
-        result, target = clean_data(messy_data, "target", cfg)
+        result, target, _ = clean_data(messy_data, "target", cfg)
 
         assert len(result) < len(messy_data)
         assert not result[target].isna().any()
@@ -142,7 +138,7 @@ class TestDataCleaningIntegration:
 
     def test_clean_preserves_data_types(self, classification_data):
         cfg = CleaningConfig(remove_id_columns=False)
-        result, target = clean_data(classification_data, "target", cfg)
+        result, target, _ = clean_data(classification_data, "target", cfg)
 
         assert pd.api.types.is_numeric_dtype(result["numeric1"])
         assert pd.api.types.is_numeric_dtype(result["numeric2"])
@@ -156,9 +152,8 @@ class TestDataCleaningIntegration:
                 "target": [0, 1, 0],
             }
         )
-
         cfg = CleaningConfig(remove_id_columns=False)
-        result, target = clean_data(df, "target", cfg)
+        result, target, _ = clean_data(df, "target", cfg)
 
         assert pd.api.types.is_datetime64_any_dtype(result["date_str"])
         assert pd.api.types.is_numeric_dtype(result["numeric_str"])
@@ -187,7 +182,6 @@ class TestFeatureEngineeringIntegration:
         np.random.seed(42)
         df = pd.DataFrame({"high_card": [f"cat_{i}" for i in range(100)]})
         y = np.random.randn(100)
-
         cfg = FeatureEngineeringConfig(
             encoding=EncodingConfig(high_cardinality_threshold=50)
         )
@@ -241,8 +235,8 @@ class TestFeatureEngineeringIntegration:
                 "time": ["14:30:00"] * 100,
             }
         )
-
         cfg = FeatureEngineeringConfig(extract_datetime=True, extract_time=True)
+
         preprocessor, col_types = build_preprocessor(df, cfg)
         X_transformed = preprocessor.fit_transform(df)
 
@@ -255,7 +249,7 @@ class TestFullPipelineIntegration:
         clean_cfg = CleaningConfig(
             drop_duplicates=True, max_missing_row_ratio=0.5, remove_id_columns=True
         )
-        df_clean, target = clean_data(messy_data, "target", clean_cfg)
+        df_clean, target, _ = clean_data(messy_data, "target", clean_cfg)
         assert len(df_clean) > 10
 
         X = df_clean.drop(target, axis=1)
@@ -268,10 +262,9 @@ class TestFullPipelineIntegration:
         fs_cfg = FeatureSelectionConfig(variance_threshold=0.01)
         selector = build_selector(fs_cfg, TaskType.classification)
 
-        if selector is not None:
-            X_final = selector.fit_transform(X_transformed, y)
-        else:
-            X_final = X_transformed
+        X_final = (
+            selector.fit_transform(X_transformed, y) if selector else X_transformed
+        )
 
         assert X_final.shape[0] == len(y)
         assert check_no_nan(X_final)
@@ -281,7 +274,7 @@ class TestFullPipelineIntegration:
 
     def test_regression_pipeline_end_to_end(self, regression_data):
         clean_cfg = CleaningConfig(remove_id_columns=False)
-        df_clean, target = clean_data(regression_data, "target", clean_cfg)
+        df_clean, target, _ = clean_data(regression_data, "target", clean_cfg)
 
         X = df_clean.drop(target, axis=1)
         y = df_clean[target]
@@ -309,9 +302,8 @@ class TestFullPipelineIntegration:
                 "target": [0, 1, 0, 1, 0] * 20,
             }
         )
-
         clean_cfg = CleaningConfig(drop_duplicates=False, remove_id_columns=False)
-        df_clean, target = clean_data(df, "target", clean_cfg)
+        df_clean, target, _ = clean_data(df, "target", clean_cfg)
 
         X = df_clean.drop(target, axis=1)
         y = df_clean[target]
@@ -332,7 +324,6 @@ class TestTrainingIntegration:
             io=IOConfig(output_dir=tmp_path),
             reporting=ReportConfig(enabled=True),
         )
-
         result = train(classification_data, "target", cfg)
 
         assert result is not None
@@ -354,7 +345,6 @@ class TestTrainingIntegration:
             io=IOConfig(output_dir=tmp_path),
             reporting=ReportConfig(enabled=False),
         )
-
         result = train(regression_data, "target", cfg)
 
         assert result is not None
@@ -369,22 +359,20 @@ class TestTrainingIntegration:
 
 class TestCLIIntegration:
     @pytest.mark.parametrize(
-        "task_type,target_col,n_samples",
+        "task_type,n_samples",
         [
-            ("classification", "target", 100),
-            ("regression", "target", 100),
+            ("classification", 100),
+            ("regression", 100),
         ],
     )
-    def test_cli_run_command(
-        self, cli_runner, cli_app, tmp_path, task_type, target_col, n_samples
-    ):
+    def test_cli_run_command(self, cli_runner, cli_app, tmp_path, task_type, n_samples):
         np.random.seed(42)
         if task_type == "classification":
             df = pd.DataFrame(
                 {
                     "feature1": np.random.rand(n_samples),
                     "feature2": np.random.rand(n_samples),
-                    target_col: np.random.randint(0, 2, n_samples),
+                    "target": np.random.randint(0, 2, n_samples),
                 }
             )
         else:
@@ -392,7 +380,7 @@ class TestCLIIntegration:
                 {
                     "feature1": np.random.rand(n_samples),
                     "feature2": np.random.rand(n_samples),
-                    target_col: np.random.rand(n_samples) * 100,
+                    "target": np.random.rand(n_samples) * 100,
                 }
             )
 
@@ -409,7 +397,7 @@ class TestCLIIntegration:
                 "--dataset",
                 str(dataset_path),
                 "--target",
-                target_col,
+                "target",
                 "--output",
                 str(output_dir),
                 "--config",
@@ -462,8 +450,7 @@ class TestCLIIntegration:
         export_destination = tmp_path / "exported_model.joblib"
 
         export_result = cli_runner.invoke(
-            cli_app,
-            ["export", str(source_model_path), "--to", str(export_destination)],
+            cli_app, ["export", str(source_model_path), "--to", str(export_destination)]
         )
 
         assert export_result.exit_code == 0, f"Export failed: {export_result.stderr}"

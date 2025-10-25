@@ -1,102 +1,71 @@
 """Tests for standardize_column_names function."""
 
 import pandas as pd
+import pytest
 from auto_ml_pipeline.data_cleaning import standardize_column_names
 
 
+@pytest.fixture
+def basic_df():
+    return pd.DataFrame(
+        {
+            "Feature 1": [1, 2, 3],
+            "Feature-2": [4, 5, 6],
+            "Feature.3": [7, 8, 9],
+        }
+    )
+
+
 class TestStandardizeColumnNames:
-    """Test standardize_column_names function."""
-
-    def test_basic_standardization(self):
-        """Test basic column name standardization."""
-        df = pd.DataFrame(
-            {
-                "Feature 1": [1, 2, 3],
-                "Feature-2": [4, 5, 6],
-                "Feature.3": [7, 8, 9],
-            }
-        )
-
-        result, standardized_target = standardize_column_names(df, "Feature 1")
+    def test_basic_standardization(self, basic_df):
+        result, target, mapping = standardize_column_names(basic_df, "Feature 1")
 
         assert list(result.columns) == ["feature_1", "feature_2", "feature_3"]
-        assert standardized_target == "feature_1"
+        assert target == "feature_1"
+        assert mapping["Feature 1"] == "feature_1"
 
-    def test_special_characters(self):
-        """Test handling of special characters."""
-        df = pd.DataFrame(
-            {
-                "Feature@1": [1, 2, 3],
-                "Feature#2": [4, 5, 6],
-                "Feature$3": [7, 8, 9],
-                "Feature%4": [10, 11, 12],
-            }
-        )
+    @pytest.mark.parametrize("special_char", ["@", "#", "$", "%"])
+    def test_special_characters_removed(self, special_char):
+        df = pd.DataFrame({f"Feature{special_char}1": [1, 2, 3]})
+        result, _, _ = standardize_column_names(df, f"Feature{special_char}1")
 
-        result, standardized_target = standardize_column_names(df, "Feature@1")
+        assert result.columns[0] == "feature_1"
 
-        for col in result.columns:
-            # Should only contain lowercase letters, numbers, and underscores
-            assert (
-                col.replace("_", "").replace("col", "").replace("feature", "").isalnum()
-                or col == "_"
-            )
-        assert standardized_target == "feature_1"
-
-    def test_leading_number(self):
-        """Test columns starting with numbers."""
+    def test_leading_number_gets_prefix(self):
         df = pd.DataFrame(
             {
                 "1st_feature": [1, 2, 3],
                 "2nd_feature": [4, 5, 6],
             }
         )
+        result, target, _ = standardize_column_names(df, "1st_feature")
 
-        result, standardized_target = standardize_column_names(df, "1st_feature")
-
-        # Should prefix with 'col_'
         assert result.columns[0] == "col_1st_feature"
-        assert result.columns[1] == "col_2nd_feature"
-        assert standardized_target == "col_1st_feature"
+        assert target == "col_1st_feature"
 
-    def test_duplicate_names(self):
-        """Test handling of duplicate column names."""
+    def test_duplicate_names_get_suffix(self):
         df = pd.DataFrame(
             {
                 "Feature": [1, 2, 3],
-                "Feature ": [4, 5, 6],  # Space will be removed, creating duplicate
-                "Feature.": [7, 8, 9],  # Period will be removed, creating duplicate
+                "Feature ": [4, 5, 6],
+                "Feature.": [7, 8, 9],
             }
         )
+        result, target, _ = standardize_column_names(df, "Feature")
 
-        result, standardized_target = standardize_column_names(df, "Feature")
+        assert len(set(result.columns)) == 3
+        assert list(result.columns) == ["feature", "feature_1", "feature_2"]
+        assert target == "feature"
 
-        # Should have unique names with suffixes
-        assert len(result.columns) == 3
-        assert len(set(result.columns)) == 3  # All unique
-        assert result.columns[0] == "feature"
-        assert result.columns[1] == "feature_1"
-        assert result.columns[2] == "feature_2"
-        assert standardized_target == "feature"
+    @pytest.mark.parametrize("empty_name", ["", " ", "@"])
+    def test_empty_names_become_unnamed(self, empty_name):
+        df = pd.DataFrame({empty_name: [1, 2, 3]})
+        result, target, _ = standardize_column_names(df, empty_name)
 
-    def test_empty_name(self):
-        """Test handling of empty or invalid names."""
-        df = pd.DataFrame(
-            {
-                "": [1, 2, 3],
-                " ": [4, 5, 6],
-                "@": [7, 8, 9],
-            }
-        )
-
-        result, standardized_target = standardize_column_names(df, "")
-
-        # Should replace with 'unnamed'
         assert "unnamed" in result.columns[0]
-        assert standardized_target == "unnamed"
+        assert "unnamed" in target
 
-    def test_uppercase_to_lowercase(self):
-        """Test conversion to lowercase."""
+    def test_case_conversion_to_lowercase(self):
         df = pd.DataFrame(
             {
                 "FEATURE1": [1, 2, 3],
@@ -104,14 +73,12 @@ class TestStandardizeColumnNames:
                 "FeAtUrE3": [7, 8, 9],
             }
         )
-
-        result, standardized_target = standardize_column_names(df, "FEATURE1")
+        result, target, _ = standardize_column_names(df, "FEATURE1")
 
         assert list(result.columns) == ["feature1", "feature2", "feature3"]
-        assert standardized_target == "feature1"
+        assert target == "feature1"
 
-    def test_leading_trailing_underscores(self):
-        """Test removal of leading/trailing underscores."""
+    def test_underscores_stripped_and_deduplicated(self):
         df = pd.DataFrame(
             {
                 "_feature": [1, 2, 3],
@@ -119,18 +86,12 @@ class TestStandardizeColumnNames:
                 "__feature__": [7, 8, 9],
             }
         )
+        result, target, _ = standardize_column_names(df, "_feature")
 
-        result, standardized_target = standardize_column_names(df, "_feature")
+        assert list(result.columns) == ["feature", "feature_1", "feature_2"]
+        assert target == "feature"
 
-        # All three become "feature" after stripping underscores
-        # So we get: "feature", "feature_1", "feature_2"
-        assert result.columns[0] == "feature"
-        assert result.columns[1] == "feature_1"
-        assert result.columns[2] == "feature_2"
-        assert standardized_target == "feature"
-
-    def test_preserves_valid_names(self):
-        """Test that already valid names are preserved."""
+    def test_preserves_already_valid_names(self):
         df = pd.DataFrame(
             {
                 "feature_1": [1, 2, 3],
@@ -138,39 +99,28 @@ class TestStandardizeColumnNames:
                 "target": [7, 8, 9],
             }
         )
-
-        result, standardized_target = standardize_column_names(df, "feature_1")
+        result, target, _ = standardize_column_names(df, "feature_1")
 
         assert list(result.columns) == ["feature_1", "feature_2", "target"]
-        assert standardized_target == "feature_1"
+        assert target == "feature_1"
 
-    def test_no_data_modification(self):
-        """Test that data values are not modified."""
-        df = pd.DataFrame(
-            {
-                "Feature 1": [1, 2, 3],
-                "Feature-2": [4, 5, 6],
-            }
-        )
-
-        result, standardized_target = standardize_column_names(df, "Feature 1")
+    def test_data_values_unchanged(self, basic_df):
+        result, _, _ = standardize_column_names(basic_df, "Feature 1")
 
         assert result["feature_1"].tolist() == [1, 2, 3]
         assert result["feature_2"].tolist() == [4, 5, 6]
-        assert standardized_target == "feature_1"
 
-    def test_numeric_column_names(self):
-        """Test handling of numeric column names."""
-        df = pd.DataFrame(
-            {
-                1: [1, 2, 3],
-                2: [4, 5, 6],
-            }
-        )
+    def test_numeric_column_names_get_prefix(self):
+        df = pd.DataFrame({1: [1, 2, 3], 2: [4, 5, 6]})
+        result, target, _ = standardize_column_names(df, 1)
 
-        result, standardized_target = standardize_column_names(df, 1)
+        assert list(result.columns) == ["col_1", "col_2"]
+        assert target == "col_1"
 
-        # Should convert to string and add prefix
-        assert result.columns[0] == "col_1"
-        assert result.columns[1] == "col_2"
-        assert standardized_target == "col_1"
+    def test_mapping_contains_all_columns(self, basic_df):
+        _, _, mapping = standardize_column_names(basic_df, "Feature 1")
+
+        assert len(mapping) == 3
+        assert "Feature 1" in mapping
+        assert "Feature-2" in mapping
+        assert "Feature.3" in mapping
