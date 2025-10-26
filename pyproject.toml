@@ -2,9 +2,7 @@
 name = "auto-ml-pipeline"
 version = "0.1.0"
 description = "Automated Machine Learning Pipeline"
-authors = [
-    {name = "Bartosz Zielonka",email = "bzielonka1@proton.me"}
-]
+authors = [{ name = "Bartosz Zielonka", email = "bzielonka1@proton.me" }]
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
@@ -28,13 +26,8 @@ dependencies = [
     "uvicorn[standard]>=0.38.0",
 ]
 
-[project.optional-dependencies]
-dev = [
-    "pytest>=8.4.1",
-    "ruff>=0.12.10",
-    "mypy>=1.17.1",
-    "pre-commit>=4.3.0",
-]
+[dependency-groups]
+dev = ["pytest>=8.4.1", "ruff>=0.12.10", "mypy>=1.17.1", "pre-commit>=4.3.0"]
 
 [project.scripts]
 auto-ml = "auto_ml_pipeline.cli:app"
