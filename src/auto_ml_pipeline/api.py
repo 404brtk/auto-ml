@@ -166,13 +166,18 @@ def predict(payload: PredictionPayload):
         raise HTTPException(status_code=400, detail=str(error_detail))
 
 
+def create_app(run_dir: Path) -> FastAPI:
+    logger.info(f"Loading model from: {run_dir}")
+    load_artifacts(run_dir)
+    logger.info("Model loaded successfully")
+    return app
+
+
 def start_server(run_dir: Path, host: str = "0.0.0.0", port: int = 8000):
     import uvicorn
 
     try:
-        logger.info(f"Loading model from: {run_dir}")
-        load_artifacts(run_dir)
-        logger.info("Model loaded successfully")
+        create_app(run_dir)
         logger.info(f"Starting server at http://{host}:{port}")
         logger.info(f"Documentation: http://{host}:{port}/docs")
         logger.info(f"Health check: http://{host}:{port}/health")
