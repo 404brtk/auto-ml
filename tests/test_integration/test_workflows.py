@@ -24,11 +24,14 @@ from auto_ml_pipeline.feature_engineering import build_preprocessor
 from auto_ml_pipeline.feature_selection import build_selector
 from auto_ml_pipeline.trainer import train
 from typer.testing import CliRunner
+from fastapi.testclient import TestClient
 
 
 @pytest.fixture(autouse=True)
 def suppress_warnings():
     warnings.filterwarnings("ignore", message=".*does not have valid feature names.*")
+    warnings.filterwarnings("ignore", category=DeprecationWarning, module="websockets")
+    warnings.filterwarnings("ignore", message=".*websockets.legacy is deprecated.*")
 
 
 @pytest.fixture(scope="session")
@@ -414,19 +417,18 @@ class TestCLIIntegration:
         assert (run_dir / "eval_model.joblib").exists()
         assert (run_dir / "results.json").exists()
 
-    def test_cli_export_command(self, cli_runner, cli_app, tmp_path):
-        np.random.seed(42)
+    def test_cli_deploy_command(self, cli_runner, cli_app, tmp_path):
+        dataset_path = tmp_path / "dummy_classification.csv"
         df = pd.DataFrame(
             {
-                "feature1": np.random.rand(100),
-                "feature2": np.random.rand(100),
-                "target": np.random.randint(0, 2, 100),
+                "feature1": np.random.rand(30),
+                "feature2": np.random.rand(30),
+                "target": np.random.randint(0, 2, 30),
             }
         )
-        dataset_path = tmp_path / "train_data.csv"
         df.to_csv(dataset_path, index=False)
 
-        output_dir = tmp_path / "cli_export_source"
+        output_dir = tmp_path / "cli_output_deploy"
         output_dir.mkdir()
 
         run_result = cli_runner.invoke(
@@ -443,16 +445,46 @@ class TestCLIIntegration:
                 "configs/quickstart.yaml",
             ],
         )
-        assert run_result.exit_code == 0, f"Training failed: {run_result.stderr}"
+        assert run_result.exit_code == 0, f"CLI run failed: {run_result.stderr}"
 
-        source_run_dir = list(output_dir.glob("run_*"))[0]
-        source_model_path = source_run_dir / "eval_model.joblib"
-        export_destination = tmp_path / "exported_model.joblib"
+        run_dirs = list(output_dir.glob("run_*"))
+        assert len(run_dirs) == 1
+        run_dir = run_dirs[0]
 
-        export_result = cli_runner.invoke(
-            cli_app, ["export", str(source_model_path), "--to", str(export_destination)]
+        # Test: Create FastAPI app and test with TestClient
+        from auto_ml_pipeline.api import create_app
+
+        app = create_app(run_dir)
+        client = TestClient(app)
+
+        # Test health endpoint
+        response = client.get("/health")
+        assert response.status_code == 200
+        json_response = response.json()
+        assert json_response["status"] == "healthy"
+        assert json_response["model_loaded"] is True
+
+        # Test prediction endpoint
+        prediction_response = client.post(
+            "/predict",
+            json={"inputs": [{"feature1": 0.5, "feature2": 0.5}]},
         )
+        assert prediction_response.status_code == 200
 
-        assert export_result.exit_code == 0, f"Export failed: {export_result.stderr}"
-        assert "Model exported to" in export_result.stdout
-        assert export_destination.exists()
+        result = prediction_response.json()
+        assert "predictions" in result
+        assert len(result["predictions"]) == 1
+        assert "target" in result["predictions"][0]
+
+        # Test multiple predictions
+        multi_prediction = client.post(
+            "/predict",
+            json={
+                "inputs": [
+                    {"feature1": 0.1, "feature2": 0.2},
+                    {"feature1": 0.8, "feature2": 0.9},
+                ]
+            },
+        )
+        assert multi_prediction.status_code == 200
+        assert len(multi_prediction.json()["predictions"]) == 2
