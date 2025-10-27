@@ -649,7 +649,7 @@ class ReportConfig(BaseModel):
 class ApiConfig(BaseModel):
     """Configuration for the deployment server."""
 
-    host: str = Field(default="127.0.0.1", description="Host to bind the server to.")
+    host: str = Field(default="0.0.0.0", description="Host to bind the server to.")
     port: int = Field(default=8000, description="Port to run the server on.")
 
 
