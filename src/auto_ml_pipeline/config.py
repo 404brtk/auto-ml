@@ -580,6 +580,9 @@ class ModelsConfig(BaseModel):
         - "xgboost": XGBoost
         - "lightgbm": LightGBM
         - "catboost": CatBoost
+
+    Neural Network Models:
+    - "mlp": Multi-layer Perceptron
     """
 
     models: Optional[List[str]] = Field(
